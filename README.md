@@ -53,6 +53,10 @@ Release builds are signed with a private key that is not part of this repository
 
 The in-app updater reads the newest release of this repository. To ship a version, bump `versionName` and `versionCode` in `app/build.gradle` and in `AppInfo.java`, build and sign the APK, then publish a GitHub release tagged `vX.Y.Z` with the APK attached. The release notes are shown to users in the update dialog.
 
+## License
+
+[MIT](LICENSE). You can use and change the code freely, but any copy or substantial part of it must keep the copyright line "Copyright (c) 2026 hamoexe" and the license text, so credit goes back to the author.
+
 ## Credits
 
 [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) for YouTube access, [LRCLIB](https://lrclib.net) and BiniLyrics for lyrics, and [AndroidX media3](https://developer.android.com/media/media3) for the player.
