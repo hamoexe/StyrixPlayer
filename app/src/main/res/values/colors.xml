@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fallback palette for devices below Android 12. Android 12+ uses wallpaper colors. -->
+    <color name="styrix_primary">#6750A4</color>
+    <color name="styrix_on_primary">#FFFFFF</color>
+    <color name="styrix_primary_container">#EADDFF</color>
+    <color name="styrix_on_primary_container">#21005D</color>
+    <color name="styrix_secondary">#625B71</color>
+    <color name="styrix_on_secondary">#FFFFFF</color>
+    <color name="styrix_tertiary">#7D5260</color>
+    <color name="styrix_on_tertiary">#FFFFFF</color>
+</resources>

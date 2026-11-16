@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">StyrixPlayer</string>
+    <string name="songs">Songs</string>
+    <string name="no_songs">No music found on this device</string>
+    <string name="permission_needed">Allow audio access to see your music</string>
+    <string name="not_ready">Player is still connecting, try again</string>
+</resources>

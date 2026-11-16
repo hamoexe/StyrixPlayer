@@ -1,0 +1,19 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+        // If you want to keep using your local script repository as well:
+        maven { url '/data/data/com.itsaky.androidide/files/home/maven/localMvnRepository' }
+    }
+}
+rootProject.name = "StyrixPlayer"
+include ':app'

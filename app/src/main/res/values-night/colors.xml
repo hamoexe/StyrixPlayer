@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="styrix_primary">#D0BCFF</color>
+    <color name="styrix_on_primary">#381E72</color>
+    <color name="styrix_primary_container">#4F378B</color>
+    <color name="styrix_on_primary_container">#EADDFF</color>
+    <color name="styrix_secondary">#CCC2DC</color>
+    <color name="styrix_on_secondary">#332D41</color>
+    <color name="styrix_tertiary">#EFB8C8</color>
+    <color name="styrix_on_tertiary">#492532</color>
+</resources>

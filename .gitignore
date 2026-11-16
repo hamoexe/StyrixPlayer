@@ -1,0 +1,16 @@
+build/
+.gradle/
+.cg/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.pk8
+*.pem
+*.bak
+*.bak-mcp
+.idea/
+
+PROJECT_INFO.md

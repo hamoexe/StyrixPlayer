@@ -1,0 +1,37 @@
+<resources>
+    <style name="Theme.StyrixPlayer" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/styrix_primary</item>
+        <item name="colorOnPrimary">@color/styrix_on_primary</item>
+        <item name="colorPrimaryContainer">@color/styrix_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/styrix_on_primary_container</item>
+        <item name="colorSecondary">@color/styrix_secondary</item>
+        <item name="colorOnSecondary">@color/styrix_on_secondary</item>
+        <item name="colorTertiary">@color/styrix_tertiary</item>
+        <item name="colorOnTertiary">@color/styrix_on_tertiary</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">?attr/colorSurface</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.StyrixPlayer.Dialog</item>
+        <item name="materialButtonStyle">@style/Widget.StyrixPlayer.Button</item>
+    </style>
+
+    <style name="ThemeOverlay.StyrixPlayer.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.StyrixPlayer.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.StyrixPlayer.Medium</item>
+    </style>
+
+    <style name="ShapeAppearance.StyrixPlayer.Small" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerSize">16dp</item>
+    </style>
+
+    <style name="ShapeAppearance.StyrixPlayer.Medium" parent="ShapeAppearance.Material3.Corner.Large">
+        <item name="cornerSize">24dp</item>
+    </style>
+
+    <style name="Widget.StyrixPlayer.Button" parent="Widget.Material3.Button">
+        <item name="cornerRadius">20dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+</resources>

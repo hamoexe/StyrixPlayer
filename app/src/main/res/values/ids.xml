@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="ambient_watch" type="id" />
+    <item name="ambient_adapter" type="id" />
+</resources>
