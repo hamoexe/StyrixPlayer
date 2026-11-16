@@ -55,7 +55,9 @@ The in-app updater reads the newest release of this repository. To ship a versio
 
 ## License
 
-[MIT](LICENSE). You can use and change the code freely, but any copy or substantial part of it must keep the copyright line "Copyright (c) 2026 hamoexe" and the license text, so credit goes back to the author.
+Copyright (C) 2026 hamoexe. Released under the [GNU GPL v3](LICENSE).
+
+StyrixPlayer is free and will stay free. You can use it, study it and change it, but anyone who shares a copy or a modified version must also share its full source under the same license and keep this copyright notice, so credit always goes back to the author.
 
 ## Credits
 
