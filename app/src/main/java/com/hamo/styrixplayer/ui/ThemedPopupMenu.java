@@ -53,7 +53,7 @@ final class ThemedPopupMenu {
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable shape = new GradientDrawable();
         shape.setColor(bg);
-        shape.setCornerRadius(18 * d);
+        shape.setCornerRadius(24 * d);
         box.setBackground(shape);
         box.setClipToOutline(true);
         box.setPadding(0, (int) (8 * d), 0, (int) (8 * d));
@@ -70,7 +70,10 @@ final class ThemedPopupMenu {
             TextView row = new TextView(context);
             row.setText(com.hamo.styrixplayer.I18n.tc(item.getTitle()));
             row.setTextSize(16);
-            row.setTextColor(fg);
+            row.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+            String t = String.valueOf(item.getTitle()).toLowerCase();
+            boolean danger = t.startsWith("delete") || t.startsWith("remove");
+            row.setTextColor(danger ? MaterialColors.getColor(anchor, com.google.android.material.R.attr.colorError) : fg);
             row.setSingleLine(true);
             row.setMinWidth((int) (200 * d));
             row.setMinHeight((int) (52 * d));
@@ -89,6 +92,6 @@ final class ThemedPopupMenu {
             }
             box.addView(row);
         }
-        window.showAsDropDown(anchor, 0, -(int) (4 * d), Gravity.END);
+        window.showAsDropDown(anchor, -(int) (16 * d), -(int) (4 * d), Gravity.END);   // keep it inside the screen edge
     }
 }

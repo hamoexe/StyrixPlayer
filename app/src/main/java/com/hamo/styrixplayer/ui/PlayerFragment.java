@@ -163,7 +163,8 @@ public class PlayerFragment extends Fragment {
     private TextureView videoView;
     private View artFrame;
     @Nullable private VideoLayer videoLayer;
-    private boolean videoPref, videoOn, lyricsBeforeVideo, lyricsEmpty = true;
+    private boolean videoPref, videoOn, lyricsBeforeVideo, lyricsEmpty = true, lyrShown;
+    @Nullable private android.animation.ObjectAnimator shiftAnim;
     @Nullable private String videoAsked;
     @Nullable private ValueAnimator frameAnim;
     @Nullable private CornerGlow glow;
@@ -356,7 +357,7 @@ public class PlayerFragment extends Fragment {
         art.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
             final int w = r - l;
             final ViewGroup.LayoutParams lp = v.getLayoutParams();
-            if (w > 0 && lp.height != w) {
+            if (w > 0 && !videoOn && lp.height != w) {   // video mode sets its own height
                 lp.height = w;
                 v.post(() -> v.setLayoutParams(lp));
             }
@@ -472,7 +473,7 @@ public class PlayerFragment extends Fragment {
         Anim.pressable(btnVideo);
         GradientDrawable black = new GradientDrawable();
         black.setColor(Color.BLACK);
-        black.setCornerRadius(24 * getResources().getDisplayMetrics().density);
+        black.setCornerRadius(0f);   // edge to edge
         videoBox.setBackground(black);
         videoPref = prefs.getBoolean(KEY_VIDEO, false);
         videoLayer = new VideoLayer(ctx(), videoView, new VideoLayer.Callback() {
@@ -636,13 +637,57 @@ public class PlayerFragment extends Fragment {
     private void setLyricsOpen(boolean open, boolean animate) {
         lyricsOpen = open;
         prefs.edit().putBoolean(KEY_LYRICS_OPEN, open).apply();
-        if (animate && !videoOn) TransitionManager.beginDelayedTransition(content);
-        if (!videoOn) lyricsView.setVisibility(open ? View.VISIBLE : View.GONE);
         // INVISIBLE (not GONE) so the artwork keeps its size and the lyrics fill the same square
         boolean hideCover = open || videoOn;
-        art.setVisibility(hideCover ? View.INVISIBLE : View.VISIBLE);
-        artShadow.setVisibility(hideCover ? View.INVISIBLE : View.VISIBLE); // fades with the cover (same transition)
-        applyVideoLayout(animate && videoOn);
+        art.animate().cancel();
+        artShadow.animate().cancel();
+        lyricsView.animate().cancel();
+        applyVideoLayout(animate && videoOn);   // sets the end state; the fade below starts from it
+        if (animate && !videoOn) {
+            // Plain cross-fade. No layout transition: a TransitionManager pass over the whole page made
+            // the title, seek bar and buttons fly up and drop back while the cover and lyrics swapped.
+            final long dur = 220;
+            if (open) {
+                lyricsView.setAlpha(0f);
+                lyricsView.setVisibility(View.VISIBLE);
+                lyricsView.animate().alpha(1f).setDuration(dur).start();
+                art.animate().alpha(0f).setDuration(dur).withEndAction(() -> {
+                    if (lyricsOpen) {
+                        art.setVisibility(View.INVISIBLE);
+                        art.setAlpha(1f);
+                    }
+                }).start();
+                artShadow.animate().alpha(0f).setDuration(dur).withEndAction(() -> {
+                    if (lyricsOpen) {
+                        artShadow.setVisibility(View.INVISIBLE);
+                        artShadow.setAlpha(1f);
+                    }
+                }).start();
+            } else {
+                lyricsView.setAlpha(1f);
+                lyricsView.setVisibility(View.VISIBLE);
+                art.setAlpha(0f);
+                artShadow.setAlpha(0f);
+                art.setVisibility(View.VISIBLE);
+                artShadow.setVisibility(View.VISIBLE);
+                art.animate().alpha(1f).setDuration(dur).start();
+                artShadow.animate().alpha(1f).setDuration(dur).start();
+                lyricsView.animate().alpha(0f).setDuration(dur).withEndAction(() -> {
+                    if (!lyricsOpen) {
+                        lyricsView.setVisibility(View.GONE);
+                        lyricsView.setAlpha(1f);
+                    }
+                }).start();
+            }
+        } else {
+            lyricsView.setAlpha(1f);
+            artShadow.setAlpha(1f);
+            if (!videoOn) lyricsView.setVisibility(open ? View.VISIBLE : View.GONE);
+            if (!videoOn) {
+                art.setVisibility(hideCover ? View.INVISIBLE : View.VISIBLE);
+                artShadow.setVisibility(hideCover ? View.INVISIBLE : View.VISIBLE);
+            }
+        }
         btnLyrics.setImageTintList(ColorStateList.valueOf(open ? activeColor() : normalColor()));
         if (open && controller != null) {
             MediaItem item = controller.getCurrentMediaItem();
@@ -786,8 +831,29 @@ private void showLyricsMenu() {
     private void setQuickOpen(boolean open, boolean animate) {
         quickOpen = open;
         prefs.edit().putBoolean(KEY_QUICK_OPEN, open).apply();
-        if (animate) TransitionManager.beginDelayedTransition(content);
-        quickPanel.setVisibility(open ? View.VISIBLE : View.GONE);
+        quickPanel.animate().cancel();
+        if (animate) {
+            // fade + small slide instead of a page-wide layout transition (that made the page jump)
+            final float slide = 12 * getResources().getDisplayMetrics().density;
+            if (open) {
+                quickPanel.setAlpha(0f);
+                quickPanel.setTranslationY(slide);
+                quickPanel.setVisibility(View.VISIBLE);
+                quickPanel.animate().alpha(1f).translationY(0f).setDuration(200).start();
+            } else {
+                quickPanel.animate().alpha(0f).translationY(slide).setDuration(160).withEndAction(() -> {
+                    if (!quickOpen) {
+                        quickPanel.setVisibility(View.GONE);
+                        quickPanel.setAlpha(1f);
+                        quickPanel.setTranslationY(0f);
+                    }
+                }).start();
+            }
+        } else {
+            quickPanel.setAlpha(1f);
+            quickPanel.setTranslationY(0f);
+            quickPanel.setVisibility(open ? View.VISIBLE : View.GONE);
+        }
         btnTune.setImageTintList(ColorStateList.valueOf(open ? activeColor() : normalColor()));
     }
 
@@ -1204,7 +1270,7 @@ private void showLyricsMenu() {
     }
 
     /**
-     * Frame layout. Normal: cover, 300 dp. Video mode: the video on top and, when there are lyrics and
+     * Frame layout. Normal: square cover. Video mode: the video on top and, when there are lyrics and
      * they are on, the lyrics below it. The frame height is animated by hand (one smooth move, no
      * transition framework) so nothing jumps when the lyrics come or go.
      */
@@ -1212,14 +1278,24 @@ private void showLyricsMenu() {
         if (artFrame == null || videoBox == null || lyricsView == null) return;
         int w = artFrame.getWidth();
         if (w <= 0) w = getResources().getDisplayMetrics().widthPixels - dpx(44);
-        final int vh = Math.round(w * 9f / 16f);
+        // Video mode: the picture runs edge to edge (past the page's 24dp side padding), 16:9.
+        final int bleed = dpx(24);
+        final int vh = Math.round((w + 2 * bleed) * 9f / 16f);
         FrameLayout.LayoutParams vl = (FrameLayout.LayoutParams) videoBox.getLayoutParams();
         vl.height = vh;
+        vl.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        vl.setMargins(-bleed, 0, -bleed, 0);
         videoBox.setLayoutParams(vl);
 
         final boolean showLyr = videoOn ? (lyricsOpen && !lyricsEmpty) : lyricsOpen;
-        final int lyrH = dpx(240);
-        final int target = videoOn ? (showLyr ? vh + dpx(12) + lyrH : vh) : dpx(300);
+        lyrShown = showLyr;
+        // Video + lyrics get exactly the same total height as the square cover, so switching the video
+        // on or off never moves the title, seek bar or buttons.
+        final int lyrH = Math.max(dpx(120), w - vh - dpx(12));
+        // Video mode keeps ONE height whether or not lyrics are showing, so the title, seek bar and
+        // buttons below never move. Without lyrics the video simply sits in the middle of that space.
+        final int target = videoOn ? vh + dpx(12) + lyrH : w;   // normal: the cover is a square, as wide as the frame
+        final float vy = 0f;   // the video always sits at the top; the space under it holds lyrics or the cover
 
         final ViewGroup.LayoutParams al = art.getLayoutParams();
         final FrameLayout.LayoutParams ll = (FrameLayout.LayoutParams) lyricsView.getLayoutParams();
@@ -1234,45 +1310,95 @@ private void showLyricsMenu() {
         }
         lyricsView.setLayoutParams(ll);
 
-        final int from = al.height > 0 ? al.height : target;
-        if (!animate || from == target || !art.isAttachedToWindow()) {
-            al.height = target;
-            art.setLayoutParams(al);
+        final ViewGroup.LayoutParams fl0 = artFrame.getLayoutParams();
+        final int from = fl0.height > 0 ? fl0.height : target;
+
+        // Cover: full square normally. In video mode (lyrics off) it becomes a small card under the video.
+        final FrameLayout.LayoutParams ap = (FrameLayout.LayoutParams) art.getLayoutParams();
+        if (videoOn) {
+            final int g = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
+            final boolean resized = ap.width != lyrH || ap.height != lyrH || ap.gravity != g;
+            ap.width = lyrH;
+            ap.height = lyrH;
+            ap.gravity = g;
+            art.setLayoutParams(ap);
+            art.animate().cancel();
+            artShadow.setVisibility(View.INVISIBLE);
+            if (!showLyr) {
+                boolean wasHidden = art.getVisibility() != View.VISIBLE;
+                art.setVisibility(View.VISIBLE);
+                if (animate && (wasHidden || resized)) {
+                    art.setAlpha(0f);
+                    art.animate().alpha(1f).setStartDelay(120).setDuration(240).start();
+                } else {
+                    art.setAlpha(1f);
+                }
+            } else {
+                art.setVisibility(View.INVISIBLE);
+                art.setAlpha(1f);
+            }
+        } else if (ap.width != ViewGroup.LayoutParams.MATCH_PARENT || ap.gravity != -1) {
+            ap.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            ap.gravity = -1;
+            art.setLayoutParams(ap);
+        }
+        if (shiftAnim != null) shiftAnim.cancel();   // own animator: videoBox.animate() belongs to the fade in/out
+        lyricsView.animate().cancel();
+        if (!animate || !art.isAttachedToWindow()) {
+            setFrameH(al, target);
+            videoBox.setTranslationY(vy);
             lyricsView.setVisibility(showLyr ? View.VISIBLE : View.GONE);
             lyricsView.setAlpha(1f);
             return;
         }
-        final boolean lyrChanging = showLyr != (lyricsView.getVisibility() == View.VISIBLE);
-        if (lyrChanging && showLyr) {
-            lyricsView.setAlpha(0f);
-            lyricsView.setVisibility(View.VISIBLE);
+        // the video glides to its place, the lyrics fade in or out: nothing else moves
+        shiftAnim = android.animation.ObjectAnimator.ofFloat(videoBox, View.TRANSLATION_Y, videoBox.getTranslationY(), vy);
+        shiftAnim.setDuration(240);
+        shiftAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
+        shiftAnim.start();
+        if (showLyr) {
+            if (lyricsView.getVisibility() != View.VISIBLE) {
+                lyricsView.setAlpha(0f);
+                lyricsView.setVisibility(View.VISIBLE);
+            }
+            lyricsView.animate().alpha(1f).setDuration(240).start();
+        } else if (lyricsView.getVisibility() == View.VISIBLE) {
+            lyricsView.animate().alpha(0f).setDuration(200).withEndAction(() -> {
+                if (!lyrShown) {
+                    lyricsView.setVisibility(View.GONE);
+                    lyricsView.setAlpha(1f);
+                }
+            }).start();
         }
-        ValueAnimator a = ValueAnimator.ofInt(from, target);
-        a.setDuration(240);
-        a.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
-        a.addUpdateListener(v -> {
-            al.height = (int) v.getAnimatedValue();
-            art.setLayoutParams(al);
-            float f = v.getAnimatedFraction();
-            if (lyrChanging) lyricsView.setAlpha(showLyr ? f : 1f - f);
-        });
-        a.addListener(new android.animation.AnimatorListenerAdapter() {
-            private boolean cancelled;
+        if (from != target) {
+            ValueAnimator a = ValueAnimator.ofInt(from, target);
+            a.setDuration(240);
+            a.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
+            a.addUpdateListener(v -> {
+                setFrameH(al, (int) v.getAnimatedValue());
+            });
+            a.start();
+            frameAnim = a;
+        } else {
+            setFrameH(al, target);
+        }
+    }
 
-            @Override
-            public void onAnimationCancel(android.animation.Animator animation) {
-                cancelled = true;
-            }
-
-            @Override
-            public void onAnimationEnd(android.animation.Animator animation) {
-                if (cancelled) return;
-                lyricsView.setAlpha(1f);
-                lyricsView.setVisibility(showLyr ? View.VISIBLE : View.GONE);
-            }
-        });
-        a.start();
-        frameAnim = a;
+    /**
+     * The cover and its frame always get one fixed height. The frame used to be wrap_content, so
+     * every visibility change inside it (cover, lyrics, panel) made the page below it re-measure
+     * and shift for a frame or two.
+     */
+    private void setFrameH(ViewGroup.LayoutParams artLp, int h) {
+        if (!videoOn && artLp.height != h) {    // in video mode applyVideoLayout sizes the cover itself
+            artLp.height = h;
+            art.setLayoutParams(artLp);
+        }
+        ViewGroup.LayoutParams fl = artFrame.getLayoutParams();
+        if (fl.height != h) {
+            fl.height = h;
+            artFrame.setLayoutParams(fl);
+        }
     }
 
     /** Fits the picture inside the 16:9 box without cropping or stretching it. */
@@ -1946,8 +2072,19 @@ private void showLyricsMenu() {
                 setBlur(blur);
                 if (bmp != null) art.setImageBitmap(bmp);
                 else art.setImageResource(R.drawable.ic_art_placeholder);
-                art.setAlpha(0f);
-                art.animate().alpha(1f).setDuration(250).start();
+                if (videoOn ? (lyricsOpen && !lyricsEmpty) : lyricsOpen) {
+                    // Cover is meant to be hidden (lyrics or video on). A cancelled fade-out never runs its
+                    // end action, so a late cover load used to fade the cover back in behind the lyrics.
+                    art.animate().cancel();
+                    art.setAlpha(1f);
+                    art.setVisibility(View.INVISIBLE);
+                    artShadow.animate().cancel();
+                    artShadow.setAlpha(1f);
+                    artShadow.setVisibility(View.INVISIBLE);
+                } else {
+                    art.setAlpha(0f);
+                    art.animate().alpha(1f).setDuration(250).start();
+                }
                 lastTint = tint;
                 if (!AmbientTheme.active(ctx()) && !videoOn) animateBackground(tint != 0 ? tint : surfaceColor);
             });

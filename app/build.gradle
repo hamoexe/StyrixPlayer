@@ -10,8 +10,8 @@ android {
         applicationId "com.hamo.styrixplayer"
         minSdk 26
         targetSdk 34
-        versionCode 52
-        versionName "1.18.1"
+        versionCode 69
+        versionName "1.19.9"
     }
 
     buildTypes {

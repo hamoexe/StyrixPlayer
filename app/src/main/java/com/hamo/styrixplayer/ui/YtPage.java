@@ -446,7 +446,7 @@ final class YtPage {
                             com.google.android.material.R.attr.colorPrimary)
                     : com.google.android.material.color.MaterialColors.getColor(h.itemView,
                             com.google.android.material.R.attr.colorOnSurface));
-            h.title.setTypeface(null, playing ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+            h.title.setTypeface(android.graphics.Typeface.create("sans-serif-medium", playing ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
             h.itemView.setBackgroundResource(playing ? R.drawable.bg_song_row_playing : R.drawable.bg_song_row);
             boolean offline = it.isSong() && local.containsKey(it.track.videoId);
             h.subtitle.setText(offline ? it.subtitle + " • On phone" : it.subtitle);

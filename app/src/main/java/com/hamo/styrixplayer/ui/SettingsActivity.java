@@ -332,23 +332,67 @@ public class SettingsActivity extends BaseActivity {
 
     // ---------- row builders ----------
 
+    /** The card the current section's rows go into. */
+    private LinearLayout card;
+
+    private static int sectionIcon(String text) {
+        switch (text) {
+            case "Appearance": return R.drawable.ic_tune;
+            case "Library": return R.drawable.ic_music_note;
+            case "Playback": return R.drawable.ic_play;
+            case "YouTube": return R.drawable.ic_youtube;
+            case "Cache": return R.drawable.ic_download;
+            case "Updates": return R.drawable.ic_upload;
+            default: return R.drawable.ic_check;
+        }
+    }
+
+    /** A bold heading with a colored icon, then a rounded card that holds the section's rows. */
     private void addSection(String text) {
+        final float d = getResources().getDisplayMetrics().density;
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        android.widget.ImageView icon = new android.widget.ImageView(this);
+        icon.setBackgroundResource(R.drawable.bg_section_icon);
+        icon.setImageResource(sectionIcon(text));
+        icon.setImageTintList(android.content.res.ColorStateList.valueOf(MaterialColors.getColor(
+                icon, com.google.android.material.R.attr.colorOnPrimaryContainer)));
+        int ip = (int) (8 * d);
+        icon.setPadding(ip, ip, ip, ip);
+        head.addView(icon, new LinearLayout.LayoutParams((int) (36 * d), (int) (36 * d)));
+
         TextView t = new TextView(this);
         t.setText(text);
-        t.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge);
-        t.setTextColor(MaterialColors.getColor(t, com.google.android.material.R.attr.colorPrimary));
-        int h = (int) (20 * getResources().getDisplayMetrics().density);
-        int top = (int) (20 * getResources().getDisplayMetrics().density);
-        t.setPadding(h, top, h, (int) (4 * getResources().getDisplayMetrics().density));
-        container.addView(t, new LinearLayout.LayoutParams(
+        t.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
+        t.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD));
+        t.setTextColor(MaterialColors.getColor(t, com.google.android.material.R.attr.colorOnSurface));
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tl.setMarginStart((int) (12 * d));
+        head.addView(t, tl);
+
+        LinearLayout.LayoutParams hl = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hl.setMargins((int) (6 * d), (int) (24 * d), 0, (int) (10 * d));
+        container.addView(head, hl);
+
+        card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundResource(R.drawable.bg_settings_card);
+        card.setClipToOutline(true);
+        card.setPadding(0, (int) (6 * d), 0, (int) (6 * d));
+        container.addView(card, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private View inflateRow(String title, String summary) {
-        View row = LayoutInflater.from(this).inflate(R.layout.row_setting, container, false);
+        LinearLayout into = card != null ? card : container;
+        View row = LayoutInflater.from(this).inflate(R.layout.row_setting, into, false);
         ((TextView) row.findViewById(R.id.row_title)).setText(title);
         ((TextView) row.findViewById(R.id.row_summary)).setText(summary);
-        container.addView(row);
+        into.addView(row);
         return row;
     }
 

@@ -14,15 +14,15 @@
         android:clipChildren="false"
         android:clipToPadding="false"
         android:orientation="vertical"
-        android:paddingHorizontal="22dp"
-        android:paddingBottom="16dp">
+        android:paddingHorizontal="24dp"
+        android:paddingBottom="24dp">
 
         <!-- top bar: close, speed badge, quick settings toggle -->
         <LinearLayout
             android:id="@+id/player_top_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="16dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -87,7 +87,7 @@
             android:layout_height="wrap_content"
             android:clipChildren="false"
             android:clipToPadding="false"
-            android:layout_marginTop="20dp">
+            android:layout_marginTop="16dp">
 
             <!-- soft shadow: bigger than the cover and nudged down, drawn behind it -->
             <ImageView
@@ -227,7 +227,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="32dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -245,19 +245,24 @@
                     android:marqueeRepeatLimit="marquee_forever"
                     android:scrollHorizontally="true"
                     android:singleLine="true"
-                    android:textAppearance="?attr/textAppearanceHeadlineSmall" />
+                    android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                    android:textFontWeight="700"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/artist"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="8dp"
                     android:ellipsize="marquee"
                     android:marqueeRepeatLimit="marquee_forever"
                     android:scrollHorizontally="true"
                     android:singleLine="true"
                     android:textAppearance="?attr/textAppearanceTitleMedium"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textFontWeight="500"
+                    android:textSize="18sp" />
 
                 <com.google.android.material.chip.ChipGroup
                     android:id="@+id/tag_group"
@@ -289,8 +294,8 @@
             android:id="@+id/heat_bar"
             android:layout_width="match_parent"
             android:layout_height="22dp"
-            android:layout_marginHorizontal="14dp"
-            android:layout_marginTop="14dp"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="16dp"
             android:visibility="invisible" />
 
         <com.google.android.material.slider.Slider
@@ -326,13 +331,13 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="24dp"
             android:gravity="center"
             android:orientation="horizontal">
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="72dp"
+                android:layout_height="80dp"
                 android:layout_weight="1">
 
                 <ImageButton
@@ -348,7 +353,7 @@
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="72dp"
+                android:layout_height="80dp"
                 android:layout_weight="1">
 
                 <ImageButton
@@ -370,14 +375,14 @@
                 android:src="@drawable/ic_play"
                 app:borderWidth="0dp"
                 app:elevation="0dp"
-                app:fabCustomSize="82dp"
+                app:fabCustomSize="96dp"
                 app:hoveredFocusedTranslationZ="0dp"
-                app:maxImageSize="40dp"
+                app:maxImageSize="48dp"
                 app:pressedTranslationZ="0dp" />
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="72dp"
+                android:layout_height="80dp"
                 android:layout_weight="1">
 
                 <ImageButton
@@ -393,7 +398,7 @@
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="72dp"
+                android:layout_height="80dp"
                 android:layout_weight="1">
 
                 <ImageButton
@@ -411,28 +416,34 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="24dp"
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_queue"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_marginEnd="6dp"
+                android:layout_height="56dp"
+                android:layout_marginEnd="8dp"
                 android:layout_weight="1"
                 android:maxLines="1"
-                android:text="Queue" />
+                android:text="Queue"
+                android:textSize="16sp"
+                app:cornerRadius="28dp"
+                app:icon="@drawable/ic_queue_music" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_sleep"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="6dp"
+                android:layout_height="56dp"
+                android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:maxLines="1"
-                android:text="Sleep timer" />
+                android:text="Sleep timer"
+                android:textSize="16sp"
+                app:cornerRadius="28dp"
+                app:icon="@drawable/ic_bedtime" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

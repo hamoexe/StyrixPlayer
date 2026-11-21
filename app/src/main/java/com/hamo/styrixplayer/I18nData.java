@@ -339,6 +339,11 @@ final class I18nData {
         {"The app crashed last time", "تعطّل التطبيق في المرة الماضية", "ئەپەکە جاری پێشوو وەستا", "Uygulama geçen sefer çöktü"},
         {"Copy", "نسخ", "کۆپی", "Kopyala"},
         {"Copied", "تم النسخ", "کۆپی کرا", "Kopyalandı"},
+        {"A new version of StyrixPlayer is ready", "إصدار جديد من StyrixPlayer جاهز", "وەشانێکی نوێی StyrixPlayer ئامادەیە", "StyrixPlayer'ın yeni bir sürümü hazır"},
+        {"What's new", "ما الجديد", "چی نوێیە", "Yenilikler"},
+        {"Hide", "إخفاء", "شاردنەوە", "Gizle"},
+        {"Starting…", "جارٍ البدء…", "دەستپێدەکات…", "Başlıyor…"},
+        {"Installing…", "جارٍ التثبيت…", "دادەمەزرێت…", "Yükleniyor…"},
     };
 
     static final String[][] FRAGS = {

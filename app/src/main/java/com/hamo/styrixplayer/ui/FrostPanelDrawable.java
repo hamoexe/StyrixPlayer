@@ -60,10 +60,16 @@ final class FrostPanelDrawable extends Drawable {
         clip.addRoundRect(rf, radius, radius, Path.Direction.CW);
         int save = canvas.save();
         canvas.clipPath(clip);
-        if (bmp != null && !bmp.isRecycled() && cover != null && cover.getWidth() > 0 && cover.getHeight() > 0) {
+        boolean blur = false;
+        if (bmp != null && !bmp.isRecycled() && cover != null && cover.getWidth() > 0 && cover.getHeight() > 0
+                && cover.getVisibility() == View.VISIBLE && cover.getAlpha() > 0.5f) {
             // the cover's rectangle, seen from the panel's own corner
             dst.set(cover.getLeft() - panel.getLeft(), cover.getTop() - panel.getTop(),
                     cover.getRight() - panel.getLeft(), cover.getBottom() - panel.getTop());
+            // only blur the cover when it really sits behind the whole panel (not with lyrics or video on)
+            blur = dst.left <= 0 && dst.top <= 0 && dst.right >= b.width() && dst.bottom >= b.height();
+        }
+        if (blur) {
             int bw = bmp.getWidth(), bh = bmp.getHeight();
             float dw = dst.width(), dh = dst.height();
             if (dw >= dh) {                       // centerCrop: wide frame shows the middle band

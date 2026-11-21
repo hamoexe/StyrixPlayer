@@ -53,6 +53,7 @@ public class QueueActivity extends BaseActivity {
 
         @Override
         public void onMediaItemTransition(@Nullable MediaItem item, int reason) {
+            AppTheme.onTrack(QueueActivity.this, item);   // ambient colors follow the new cover while the queue is open
             refreshCurrent();
         }
     };
@@ -138,6 +139,7 @@ public class QueueActivity extends BaseActivity {
             try {
                 controller = controllerFuture.get();
                 controller.addListener(playerListener);
+                AppTheme.onTrack(this, controller.getCurrentMediaItem());
                 reconcile();
                 if (currentIndex >= 0) list.scrollToPosition(currentIndex);
             } catch (Exception e) {
@@ -228,8 +230,11 @@ public class QueueActivity extends BaseActivity {
             h.title.setText(md.title != null ? md.title : "");
             h.artist.setText(md.artist != null ? md.artist : "");
             ArtLoader.loadItem(QueueActivity.this, items.get(position), h.art, 144);
-            h.title.setTypeface(null, current ? Typeface.BOLD : Typeface.NORMAL);
-            h.title.setTextColor(current ? activeColor : normalColor);
+            h.title.setTypeface(Typeface.create("sans-serif-medium", current ? Typeface.BOLD : Typeface.NORMAL));
+            // the colors read at creation can be one cover behind: map them to the live palette
+            boolean amb = AmbientTheme.active(QueueActivity.this);
+            h.title.setTextColor(current ? (amb ? AmbientTheme.map(activeColor) : activeColor)
+                    : (amb ? AmbientTheme.map(normalColor) : normalColor));
             // same "colored row" marker as the song lists
             h.itemView.setBackgroundResource(current ? R.drawable.bg_song_row_playing : R.drawable.bg_song_row);
             h.itemView.setOnClickListener(v -> {

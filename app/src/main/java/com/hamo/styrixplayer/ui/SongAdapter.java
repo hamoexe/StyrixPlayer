@@ -75,7 +75,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.Holder> {
         h.title.setTextColor(playing ? activeColor : normalColor);
         // the playing row gets a real color wash (primary container follows the cover live)
         h.itemView.setBackgroundResource(playing ? R.drawable.bg_song_row_playing : R.drawable.bg_song_row);
-        h.title.setTypeface(null, playing ? Typeface.BOLD : Typeface.NORMAL);
+        h.title.setTypeface(Typeface.create("sans-serif-medium", playing ? Typeface.BOLD : Typeface.NORMAL));
 
         h.subtitle.setText(songLine(s));
         String tags = s.tagsText();

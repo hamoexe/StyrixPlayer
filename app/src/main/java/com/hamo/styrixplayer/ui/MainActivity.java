@@ -88,6 +88,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
     private final ColorDrawable sheetBacking = new ColorDrawable(0);
     private float miniArtX, miniArtY, miniArtSize, bigArtX, bigArtY, bigArtSize, ghostBase;
     private float ghostRadius;
+    private View morphBig;                 // the real cover; measured live so the flying one lands exactly on it
     private final OnBackPressedCallback sheetBack = new OnBackPressedCallback(false) {
         @Override
         public void handleOnBackPressed() {
@@ -501,6 +502,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         captureMiniSnapshot();
 
         morphOk = false;
+        morphBig = null;
         View big = sheet.findViewById(R.id.art);
         if (big == null || big.getWidth() <= 0 || big.getVisibility() != View.VISIBLE
                 || miniPlayer.getVisibility() != View.VISIBLE || miniArt.getWidth() <= 0
@@ -526,6 +528,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         if (d == null) return;
         Drawable.ConstantState cs = d.getConstantState();
         morphArt.setImageDrawable(cs != null ? cs.newDrawable().mutate() : d);
+        morphBig = big;
         morphOk = true;
     }
 
@@ -671,13 +674,26 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         }
         // the mini player's own cover would be a second copy next to the flying one
         if (miniArt.getVisibility() != View.INVISIBLE) miniArt.setVisibility(View.INVISIBLE);
+        // Re-measure where the real cover is right now (it may still be scaling or the page may have
+        // settled a few px differently since the gesture began), so the landing never pops.
+        float endRadius = dp(32);
+        if (morphBig != null && morphBig.getWidth() > 0) {
+            int[] la = new int[2];
+            int[] lb = new int[2];
+            mainRoot.getLocationInWindow(lb);
+            morphBig.getLocationInWindow(la);
+            bigArtX = la[0] - lb[0];
+            bigArtY = la[1] - lb[1] - sheet.getTranslationY();
+            bigArtSize = morphBig.getWidth() * morphBig.getScaleX();
+            endRadius = dp(32) * morphBig.getScaleX();
+        }
         float size = lerp(miniArtSize, bigArtSize, p);
         float s = size / ghostBase;
         morphArt.setScaleX(s);
         morphArt.setScaleY(s);
         morphArt.setTranslationX(lerp(miniArtX, bigArtX, p));
         morphArt.setTranslationY(lerp(miniArtY, bigArtY, p));
-        ghostRadius = lerp(dp(14), dp(24), p) / s;
+        ghostRadius = lerp(dp(16), endRadius, p) / s;   // 16dp mini cover to the player's 32dp cover
         morphArt.invalidateOutline();
         // the shadow flies with the cover and grows as it lands (bitmap is 1.15x the cover, nudged down)
         float k = Math.max(0f, Math.min(1f, (p - 0.3f) / 0.65f));
@@ -687,7 +703,8 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         morphShadow.setTranslationX(lerp(miniArtX, bigArtX, p) - grow);
         morphShadow.setTranslationY(lerp(miniArtY, bigArtY, p) - grow
                 + dp(8) * (size / Math.max(1f, bigArtSize)));
-        morphShadow.setAlpha(k * k * (3f - 2f * k));
+        boolean fullCover = morphBig == null || morphBig.getWidth() >= mainRoot.getWidth() * 0.6f;
+        morphShadow.setAlpha(fullCover ? k * k * (3f - 2f * k) : 0f);   // video mode: the small cover card has no shadow
         if (morphShadow.getVisibility() != View.VISIBLE) morphShadow.setVisibility(View.VISIBLE);
         // the real cover takes over only once the flight is finished (positions match exactly there)
         morphArt.setAlpha(1f); // hard swap with the real cover at the very end, never both at once
@@ -1058,8 +1075,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
     }
 
     private void openSearch() {
-        TransitionManager.beginDelayedTransition(header);
-        searchBar.setVisibility(View.VISIBLE);
+        slideSearch(true);
         backCallback.setEnabled(true);
         searchInput.requestFocus();
         InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -1071,9 +1087,54 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
         searchInput.setText("");
-        TransitionManager.beginDelayedTransition(header);
-        searchBar.setVisibility(View.GONE);
+        slideSearch(false);
         backCallback.setEnabled(false);
+    }
+
+    private android.animation.ValueAnimator searchAnim;
+
+    /**
+     * The search bar grows and shrinks frame by frame, and the page under it moves with it. The
+     * old page-wide transition only animated the header: the list below jumped to its final spot
+     * at once while the bar was still sliding over the buttons.
+     */
+    private void slideSearch(final boolean open) {
+        if (searchAnim != null) searchAnim.cancel();
+        final ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) searchBar.getLayoutParams();
+        final int fullH = dp(54);
+        final int fullM = dp(10);
+        final float start = searchBar.getVisibility() == View.VISIBLE ? clamp01(lp.height / (float) fullH) : 0f;
+        final float end = open ? 1f : 0f;
+        if (open) searchBar.setVisibility(View.VISIBLE);
+        searchAnim = android.animation.ValueAnimator.ofFloat(start, end);
+        searchAnim.setDuration(220);
+        searchAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(1.3f));
+        searchAnim.addUpdateListener(a -> {
+            float f = (float) a.getAnimatedValue();
+            lp.height = Math.round(fullH * f);
+            lp.bottomMargin = Math.round(fullM * f);
+            searchBar.setAlpha(f);
+            searchBar.setLayoutParams(lp);
+        });
+        searchAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(android.animation.Animator animation) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                if (cancelled) return;
+                lp.height = fullH;
+                lp.bottomMargin = fullM;
+                searchBar.setLayoutParams(lp);
+                searchBar.setAlpha(1f);
+                if (!open) searchBar.setVisibility(View.GONE);
+            }
+        });
+        searchAnim.start();
     }
 
     /** Shows the Google account photo (or a person icon) and quietly refreshes it from YouTube. */

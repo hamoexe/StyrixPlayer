@@ -8,7 +8,7 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="76dp"
+        android:layout_height="88dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="16dp">
@@ -28,8 +28,10 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="14dp"
             android:text="Settings"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall"
-            android:textColor="?attr/colorOnSurface" />
+            android:textAppearance="?attr/textAppearanceHeadlineLarge"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="32sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
     <ScrollView
@@ -44,7 +46,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="14dp"
-            android:paddingBottom="24dp" />
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="32dp" />
     </ScrollView>
 </LinearLayout>
