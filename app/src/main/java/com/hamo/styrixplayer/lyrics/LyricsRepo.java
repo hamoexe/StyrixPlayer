@@ -136,7 +136,9 @@ public final class LyricsRepo {
         if (row != null && row.custom) return fromRow(row);   // your own version always wins
         if (!force && row != null) {
             boolean hasContent = row.instrumental || notEmpty(row.synced) || notEmpty(row.plain);
-            boolean fresh = System.currentTimeMillis() - row.fetchedAt < RETRY_NOT_FOUND_MS
+            // A song on the phone keeps what it has: a "not found" is not searched again by itself
+            // (only "Search again" does that). Streamed songs retry after a few days.
+            boolean fresh = (songId > 0 || System.currentTimeMillis() - row.fetchedAt < RETRY_NOT_FOUND_MS)
                     && row.fetchedAt > LOGIC_CHANGED_AT;
             if (hasContent || fresh) return fromRow(row);
         }

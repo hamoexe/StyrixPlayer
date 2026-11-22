@@ -18,6 +18,11 @@
     <style name="ThemeOverlay.StyrixPlayer.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.StyrixPlayer.Small</item>
         <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.StyrixPlayer.Medium</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/MaterialAlertDialog.StyrixPlayer.Title</item>
+    </style>
+
+    <style name="MaterialAlertDialog.StyrixPlayer.Title" parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textStyle">bold</item>
     </style>
 
     <style name="ShapeAppearance.StyrixPlayer.Small" parent="ShapeAppearance.Material3.Corner.Medium">

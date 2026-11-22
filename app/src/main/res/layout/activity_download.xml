@@ -9,7 +9,7 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="76dp"
+        android:layout_height="88dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="16dp">
@@ -28,9 +28,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="14dp"
-            android:text="Download audio"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall"
-            android:textColor="?attr/colorOnSurface" />
+            android:text="Download"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="32sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
     <ScrollView
@@ -51,7 +52,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_hero_surface"
+                android:background="@drawable/bg_download_hero"
                 android:gravity="center_horizontal"
                 android:orientation="vertical"
                 android:paddingHorizontal="22dp"
@@ -60,10 +61,10 @@
                 <ImageView
                     android:layout_width="64dp"
                     android:layout_height="64dp"
-                    android:background="@drawable/bg_icon_button"
+                    android:background="@drawable/bg_download_icon"
                     android:padding="17dp"
-                    android:src="@drawable/ic_music_note"
-                    android:tint="?attr/colorPrimary" />
+                    android:src="@drawable/ic_download"
+                    android:tint="?attr/colorOnPrimary" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -72,23 +73,52 @@
                     android:gravity="center"
                     android:text="Bring your music in"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textColor="?attr/colorOnPrimaryContainer"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="7dp"
                     android:gravity="center"
-                    android:text="Paste a YouTube link and StyrixPlayer will save the audio to your music library."
+                    android:text="Paste a YouTube link and StyrixPlayer will save the audio to your music library, or the video with the quality you pick."
                     android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
+                    android:textColor="?attr/colorOnPrimaryContainer" />
             </LinearLayout>
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/dl_mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                app:checkedButton="@+id/dl_mode_audio"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dl_mode_audio"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_weight="1"
+                    android:text="Audio"
+                    app:icon="@drawable/ic_music_note" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dl_mode_video"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_weight="1"
+                    android:text="Video"
+                    app:icon="@drawable/ic_video" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
 
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
+                android:layout_marginTop="16dp"
                 android:hint="YouTube link"
                 app:boxCornerRadiusBottomEnd="20dp"
                 app:boxCornerRadiusBottomStart="20dp"

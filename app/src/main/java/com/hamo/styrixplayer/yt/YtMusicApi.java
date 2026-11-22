@@ -293,6 +293,20 @@ public final class YtMusicApi {
         return videoCache.get(videoId);
     }
 
+    private static android.content.SharedPreferences videoStore(Context c) {
+        return c.getApplicationContext().getSharedPreferences("video_ids", Context.MODE_PRIVATE);
+    }
+
+    /** Like {@link #peekVideo(String)}, but also remembers answers from earlier runs of the app. */
+    @Nullable
+    public static String peekVideo(Context c, String videoId) {
+        String k = videoCache.get(videoId);
+        if (k != null) return k;
+        k = videoStore(c).getString(videoId, null);
+        if (k != null) videoCache.put(videoId, k);
+        return k;
+    }
+
     /**
      * The id of the real music video for a song, or "" when YouTube Music has none. A song's own id
      * is usually the audio-only "art track"; YouTube lists the video as its "counterpart" (the
@@ -330,6 +344,7 @@ public final class YtMusicApi {
         // no official video: play whatever YouTube itself plays for this id (art track, lyric video, upload)
         if (found.isEmpty()) found = videoId;
         videoCache.put(videoId, found);
+        videoStore(c).edit().putString(videoId, found).apply();
         return found;
     }
 

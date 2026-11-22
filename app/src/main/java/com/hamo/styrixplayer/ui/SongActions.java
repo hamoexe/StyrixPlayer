@@ -211,12 +211,16 @@ public final class SongActions {
                     icon.setImageResource(R.drawable.ic_add);
                     PlaylistStyle.applyColor(icon, PlaylistStyle.NEUTRAL);
                     name.setText("New playlist");
+                    name.setTextColor(com.google.android.material.color.MaterialColors.getColor(name,
+                            com.google.android.material.R.attr.colorPrimary));
                     count.setVisibility(View.GONE);
                     check.setVisibility(View.GONE);
                 } else {
                     icon.setImageResource(R.drawable.ic_queue_music);
                     PlaylistStyle.applyColor(icon, PlaylistStyle.color(p.id));
                     name.setText(p.name);
+                    name.setTextColor(com.google.android.material.color.MaterialColors.getColor(name,
+                            com.google.android.material.R.attr.colorOnSurface));
                     count.setVisibility(View.VISIBLE);
                     count.setText(containing.contains(p.id) ? "Already added"
                             : p.count + (p.count == 1 ? " song" : " songs"));

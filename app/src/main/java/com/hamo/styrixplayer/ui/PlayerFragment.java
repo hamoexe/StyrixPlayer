@@ -145,12 +145,18 @@ public class PlayerFragment extends Fragment {
     private ImageView art;
     private ImageView artShadow;
     private TextView title, artist, elapsed, total, speedBadge, speedLabel;
-    private Slider seek, speedSlider;
+    private WavySlider seek;
+    private Slider speedSlider;
     private ImageButton btnShuffle, btnRepeat, btnFav, btnPlaylist, btnTune;
+    private DlRing dlRing;
+    private boolean plDownloading;
+    private int plTint;
+    private int plRes;                 // the icon the playlist/download button shows now
     private FloatingActionButton btnPlay;
     private MaterialButton btnQueue, btnSleep;
     private MaterialSwitch switchPitch;
     private ChipGroup tagGroup;
+    @Nullable private String speedTag;      // "Slowed" / "Sped up": shown in the top bar with the speed
     private SharedPreferences prefs;
 
     // lyrics
@@ -347,6 +353,7 @@ public class PlayerFragment extends Fragment {
         btnRepeat = findViewById(R.id.btn_repeat);
         btnFav = findViewById(R.id.btn_fav);
         btnPlaylist = findViewById(R.id.btn_playlist);
+        dlRing = findViewById(R.id.dl_ring);
         btnTune = findViewById(R.id.btn_tune);
         btnPlay = findViewById(R.id.btn_play);
         btnQueue = findViewById(R.id.btn_queue);
@@ -550,6 +557,9 @@ public class PlayerFragment extends Fragment {
 
         // ----- seek bar -----
         seek.setLabelBehavior(LabelFormatter.LABEL_GONE);
+        // the thumb follows the player every frame (the 500 ms ticker alone made it step and look laggy)
+        seek.setPosSource(() -> dragging || controller == null || !controller.isPlaying() ? -1f
+                : (float) Math.max(0, controller.getCurrentPosition()));
         seek.addOnChangeListener((slider, value, fromUser) -> {
             if (fromUser) elapsed.setText(SongAdapter.formatTime((long) value));
         });
@@ -573,6 +583,7 @@ public class PlayerFragment extends Fragment {
     public void onStart() {
         super.onStart();
         YtDownloads.addListener(downloadsChanged);
+        YtDownloads.addWatcher(dlWatcher);
         AmbientTheme.register(ambientListener);
         AmbientTheme.Palette ambientNow = AmbientTheme.current();
         if (ambientNow != null && AmbientTheme.active(ctx()) && background != null) {
@@ -602,6 +613,7 @@ public class PlayerFragment extends Fragment {
         if (videoLayer != null) videoLayer.hide();
         saveHeat();
         YtDownloads.removeListener(downloadsChanged);
+        YtDownloads.removeWatcher(dlWatcher);
         AmbientTheme.unregister(ambientListener);
         handler.removeCallbacks(ticker);
         if (controller != null) {
@@ -634,7 +646,20 @@ public class PlayerFragment extends Fragment {
 
     // ---------- lyrics ----------
 
+    /** The frosted panel only blurs the cover while the cover is really behind it: redraw when that changes. */
+    private void refreshPanel() {
+        if (panelBg == null || view == null) return;
+        panelBg.invalidateSelf();
+        view.postDelayed(() -> {
+            if (panelBg != null) panelBg.invalidateSelf();
+        }, 300);
+        view.postDelayed(() -> {
+            if (panelBg != null) panelBg.invalidateSelf();
+        }, 600);
+    }
+
     private void setLyricsOpen(boolean open, boolean animate) {
+        refreshPanel();
         lyricsOpen = open;
         prefs.edit().putBoolean(KEY_LYRICS_OPEN, open).apply();
         // INVISIBLE (not GONE) so the artwork keeps its size and the lyrics fill the same square
@@ -666,12 +691,10 @@ public class PlayerFragment extends Fragment {
             } else {
                 lyricsView.setAlpha(1f);
                 lyricsView.setVisibility(View.VISIBLE);
-                art.setAlpha(0f);
-                artShadow.setAlpha(0f);
                 art.setVisibility(View.VISIBLE);
                 artShadow.setVisibility(View.VISIBLE);
-                art.animate().alpha(1f).setDuration(dur).start();
-                artShadow.animate().alpha(1f).setDuration(dur).start();
+                popIn(art);
+                popIn(artShadow);
                 lyricsView.animate().alpha(0f).setDuration(dur).withEndAction(() -> {
                     if (!lyricsOpen) {
                         lyricsView.setVisibility(View.GONE);
@@ -741,7 +764,7 @@ public class PlayerFragment extends Fragment {
 
 /** Long-press on the lyrics: edit / translate, nudge the timing or search again. */
 private void showLyricsMenu() {
-    final long id = currentSongId();
+    final long id = lyricsSongId();
     if (id < 0 || lyricsView == null || controller == null) return;
     final boolean synced = lyricsView.isSynced();
     final long offset = lyricsView.getOffsetMs();
@@ -859,6 +882,17 @@ private void showLyricsMenu() {
 
     // ---------- UI updates ----------
 
+    /** Same id the lyrics are stored under: the file's id, or a stable negative one for a streamed song. */
+    private long lyricsSongId() {
+        if (controller == null || controller.getCurrentMediaItem() == null) return -1;
+        String m = controller.getCurrentMediaItem().mediaId;
+        try {
+            return Long.parseLong(m);
+        } catch (NumberFormatException e) {
+            return -2L - Math.abs((long) m.hashCode());
+        }
+    }
+
     private long currentSongId() {
         if (controller == null || controller.getCurrentMediaItem() == null) return -1;
         try {
@@ -891,13 +925,19 @@ private void showLyricsMenu() {
 
     private void bindTags(MediaMetadata md) {
         tagGroup.removeAllViews();
+        speedTag = null;
         String raw = md.extras != null ? md.extras.getString(Song.EXTRA_TAGS, "") : "";
         if (raw == null || raw.isEmpty()) {
             tagGroup.setVisibility(View.GONE);
+            updateSpeed();
             return;
         }
         for (String t : raw.split(Song.TAG_SEPARATOR)) {
             if (t.isEmpty()) continue;
+            if (speedTag == null && t.matches("(?i).*(slowed|sped|speed|nightcore).*")) {
+                speedTag = t;              // merged into the speed badge, no chip of its own
+                continue;
+            }
             Chip chip = new Chip(ctx());
             chip.setText(t);
             chip.setClickable(false);
@@ -907,6 +947,7 @@ private void showLyricsMenu() {
             tagGroup.addView(chip);
         }
         tagGroup.setVisibility(tagGroup.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+        updateSpeed();
     }
 
     /** Video id of the playing song when it is streamed from YouTube Music, else null. */
@@ -952,12 +993,43 @@ private void showLyricsMenu() {
                 m.title == null ? "" : m.title.toString(),
                 m.artist == null ? "" : m.artist.toString(),
                 m.artworkUri == null ? "" : m.artworkUri.toString());
-        Anim.pop(btnPlaylist);
     }
 
     private final Runnable downloadsChanged = () -> {
         if (isAdded()) updatePlaylistIndicator();
     };
+
+    private final YtDownloads.Listener dlWatcher = t -> {
+        if (isAdded() && view != null) updatePlaylistIndicator();
+    };
+
+    /** Sets the playlist/download icon; when it changes it scales in (the download becomes "add to playlist"). */
+    private void setPlaylistIcon(int res, int tint, boolean downloading, int pct) {
+        boolean changed = plRes != res;
+        plRes = res;
+        if (changed) btnPlaylist.setImageResource(res);
+        if (changed || plTint != tint) {
+            plTint = tint;
+            btnPlaylist.setImageTintList(ColorStateList.valueOf(tint));
+        }
+        int ring = amb() != null ? amb().accent : activeColor();
+        dlRing.setColors(ring, alpha(normalColor(), 0x40));
+        dlRing.setState(downloading, pct);
+        float rest = downloading ? 0.55f : 1f;     // the small arrow sits inside the ring
+        if (!changed && plDownloading == downloading) return;      // only the ring moves on a progress tick
+        plDownloading = downloading;
+        btnPlaylist.animate().cancel();
+        if (changed && !downloading) {
+            btnPlaylist.setAlpha(0f);
+            btnPlaylist.setScaleX(0.5f);
+            btnPlaylist.setScaleY(0.5f);
+            btnPlaylist.animate().alpha(1f).scaleX(rest).scaleY(rest).setDuration(320)
+                    .setInterpolator(new android.view.animation.OvershootInterpolator(1.1f)).start();
+        } else {
+            btnPlaylist.setAlpha(1f);
+            btnPlaylist.animate().scaleX(rest).scaleY(rest).setDuration(220).start();
+        }
+    }
 
     /** The cover glow behind the player follows the ambient palette; the widgets are recolored generically. */
     private final AmbientTheme.Listener ambientListener = p -> {
@@ -966,6 +1038,7 @@ private void showLyricsMenu() {
         backgroundTop = p.soft;
         background.setColors(new int[]{p.soft, p.bg});
         paintControls(p);
+        refreshTints();                    // the lyric text and top icons follow the new palette too
     };
 
     @Nullable
@@ -1181,8 +1254,13 @@ private void showLyricsMenu() {
     private String videoIdFor(@Nullable MediaItem it) {
         final String base = baseVideoId(it);
         if (base == null) return null;
-        String known = YtMusicApi.peekVideo(base);
+        String known = YtMusicApi.peekVideo(ctx(), base);
         if (known != null) return known.isEmpty() ? null : known;
+        if (it != null && !YtTrack.isYtId(it.mediaId)) {
+            // A copy that is already on the phone: no lookup, it just uses what it has (the video it
+            // was saved from). A streamed song asks YouTube once; the answer is remembered for good.
+            return base;
+        }
         if (!base.equals(videoAsked)) {
             videoAsked = base;
             final Context app = getApplicationContext();
@@ -1250,11 +1328,11 @@ private void showLyricsMenu() {
                 boolean cover = !lyricsOpen;
                 art.setVisibility(cover ? View.VISIBLE : View.INVISIBLE);
                 artShadow.setVisibility(cover ? View.VISIBLE : View.INVISIBLE);
-                art.setAlpha(animate && cover ? 0f : 1f);
-                artShadow.setAlpha(animate && cover ? 0f : 1f);
+                art.setAlpha(1f);
+                artShadow.setAlpha(1f);
                 if (animate && cover) {
-                    art.animate().alpha(1f).setDuration(260).start();
-                    artShadow.animate().alpha(1f).setDuration(260).start();
+                    popIn(art);
+                    popIn(artShadow);
                 }
                 endVideoLook();
             }
@@ -1262,11 +1340,28 @@ private void showLyricsMenu() {
             applyVideoLayout(animate);
         }
         btnVideo.setImageTintList(ColorStateList.valueOf(videoOn ? activeColor() : normalColor()));
+        refreshPanel();
         if (videoOn && vid != null) videoLayer.show(vid, controller);
     }
 
     private void applyVideoLayout() {
         applyVideoLayout(false);
+    }
+
+    /** The cover scales up into place (no slow fade): it springs from small to its resting size. */
+    private void popIn(View v) {
+        popIn(v, 0.55f);
+    }
+
+    private void popIn(View v, float from) {
+        float rest = controller != null && !controller.isPlaying() ? 0.9f : 1f;
+        v.animate().cancel();
+        v.setScaleX(rest * from);
+        v.setScaleY(rest * from);
+        v.setAlpha(0f);
+        android.animation.ObjectAnimator.ofFloat(v, View.ALPHA, 0f, 1f).setDuration(90).start();
+        v.animate().scaleX(rest).scaleY(rest).setStartDelay(0).setDuration(380)
+                .setInterpolator(new android.view.animation.OvershootInterpolator(0.85f)).start();
     }
 
     /**
@@ -1291,7 +1386,9 @@ private void showLyricsMenu() {
         lyrShown = showLyr;
         // Video + lyrics get exactly the same total height as the square cover, so switching the video
         // on or off never moves the title, seek bar or buttons.
-        final int lyrH = Math.max(dpx(120), w - vh - dpx(12));
+        // room for at least three lines of the big lyric text under the video
+        final int lyrH = Math.max(dpx(214), w - vh - dpx(12));
+        final int card = Math.min(lyrH, dpx(168));        // the small cover card under the video
         // Video mode keeps ONE height whether or not lyrics are showing, so the title, seek bar and
         // buttons below never move. Without lyrics the video simply sits in the middle of that space.
         final int target = videoOn ? vh + dpx(12) + lyrH : w;   // normal: the cover is a square, as wide as the frame
@@ -1316,11 +1413,15 @@ private void showLyricsMenu() {
         // Cover: full square normally. In video mode (lyrics off) it becomes a small card under the video.
         final FrameLayout.LayoutParams ap = (FrameLayout.LayoutParams) art.getLayoutParams();
         if (videoOn) {
-            final int g = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
-            final boolean resized = ap.width != lyrH || ap.height != lyrH || ap.gravity != g;
-            ap.width = lyrH;
-            ap.height = lyrH;
+            // pinned just under the video (not to the frame's bottom), so it never slides while the frame grows
+            final int g = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+            final int top = vh + dpx(12) + (lyrH - card) / 2;
+            final boolean resized = ap.width != card || ap.height != card || ap.gravity != g
+                    || ap.topMargin != top;
+            ap.width = card;
+            ap.height = card;
             ap.gravity = g;
+            ap.topMargin = top;
             art.setLayoutParams(ap);
             art.animate().cancel();
             artShadow.setVisibility(View.INVISIBLE);
@@ -1328,8 +1429,7 @@ private void showLyricsMenu() {
                 boolean wasHidden = art.getVisibility() != View.VISIBLE;
                 art.setVisibility(View.VISIBLE);
                 if (animate && (wasHidden || resized)) {
-                    art.setAlpha(0f);
-                    art.animate().alpha(1f).setStartDelay(120).setDuration(240).start();
+                    popIn(art);
                 } else {
                     art.setAlpha(1f);
                 }
@@ -1337,9 +1437,10 @@ private void showLyricsMenu() {
                 art.setVisibility(View.INVISIBLE);
                 art.setAlpha(1f);
             }
-        } else if (ap.width != ViewGroup.LayoutParams.MATCH_PARENT || ap.gravity != -1) {
+        } else if (ap.width != ViewGroup.LayoutParams.MATCH_PARENT || ap.gravity != -1 || ap.topMargin != 0) {
             ap.width = ViewGroup.LayoutParams.MATCH_PARENT;
             ap.gravity = -1;
+            ap.topMargin = 0;
             art.setLayoutParams(ap);
         }
         if (shiftAnim != null) shiftAnim.cancel();   // own animator: videoBox.animate() belongs to the fade in/out
@@ -1592,30 +1693,33 @@ private void showLyricsMenu() {
         if (yt != null) {
             // streamed song: downloads it; once it is on the phone it adds the saved copy to a playlist
             long local = YtLocal.songIdFor(ctx(), yt);
+            YtDownloads.Task task = YtDownloads.get(yt);
             if (local > 0) {
                 boolean inAny = !Db.get(ctx()).playlistsContaining(local).isEmpty();
-                btnPlaylist.setImageResource(inAny ? R.drawable.ic_playlist_add_check : R.drawable.ic_playlist_add);
-                btnPlaylist.setImageTintList(ColorStateList.valueOf(inAny ? activeColor() : normalColor()));
+                setPlaylistIcon(inAny ? R.drawable.ic_playlist_add_check : R.drawable.ic_playlist_add,
+                        inAny ? activeColor() : normalColor(), false, -1);
+            } else if (task != null) {
+                int pct = task.stage != null || task.state == YtDownloads.QUEUED ? -1 : task.percent;
+                setPlaylistIcon(R.drawable.ic_download, activeColor(), true, pct);
             } else {
-                btnPlaylist.setImageResource(R.drawable.ic_download);
-                btnPlaylist.setImageTintList(ColorStateList.valueOf(normalColor()));
+                setPlaylistIcon(R.drawable.ic_download, normalColor(), false, -1);
             }
             return;
         }
         long id = currentSongId();
         if (id < 0) {
-            btnPlaylist.setImageResource(R.drawable.ic_playlist_add);
-            btnPlaylist.setImageTintList(ColorStateList.valueOf(normalColor()));
+            setPlaylistIcon(R.drawable.ic_playlist_add, normalColor(), false, -1);
             return;
         }
         boolean inAny = !Db.get(ctx()).playlistsContaining(id).isEmpty();
-        btnPlaylist.setImageResource(inAny ? R.drawable.ic_playlist_add_check : R.drawable.ic_playlist_add);
-        btnPlaylist.setImageTintList(ColorStateList.valueOf(inAny ? activeColor() : normalColor()));
+        setPlaylistIcon(inAny ? R.drawable.ic_playlist_add_check : R.drawable.ic_playlist_add,
+                inAny ? activeColor() : normalColor(), false, -1);
     }
 
     private void updatePlayPause() {
         if (controller == null) return;
         boolean playing = controller.isPlaying();
+        seek.setWaving(playing);
         btnPlay.setImageResource(playing ? R.drawable.ic_pause : R.drawable.ic_play);
         // artwork "breathes": full size while playing, slightly smaller when paused
         float scale = playing ? 1f : 0.9f;
@@ -1682,7 +1786,7 @@ private void showLyricsMenu() {
         MediaItem item = controller.getCurrentMediaItem();
         boolean on = Prefs.getBool(ctx(), Prefs.HEATMAP, true) && item != null && known;
         if (!on) {
-            heatBar.setVisibility(View.INVISIBLE);
+            heatBar.setVisibility(View.GONE);
             return;
         }
         String key = item.mediaId;
@@ -1710,7 +1814,7 @@ private void showLyricsMenu() {
         }
         heatLastPos = pos;
         boolean visible = heatBar.setData(heat);
-        heatBar.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        heatBar.setVisibility(visible ? View.VISIBLE : View.GONE);
         long now = android.os.SystemClock.elapsedRealtime();
         if (heatDirty && now - heatSaved > 20_000) saveHeat();
     }
@@ -1742,8 +1846,9 @@ private void showLyricsMenu() {
         if (controller == null) return;
         float speed = controller.getPlaybackParameters().speed;
         boolean changed = Math.abs(speed - 1f) > 0.001f;
-        speedBadge.setVisibility(changed ? View.VISIBLE : View.GONE);
-        speedBadge.setText(formatSpeed(speed));
+        speedBadge.setVisibility(changed || speedTag != null ? View.VISIBLE : View.GONE);
+        speedBadge.setText(speedTag == null ? formatSpeed(speed)
+                : changed ? speedTag + " \u00b7 " + formatSpeed(speed) : speedTag);
         if (!speedDragging) {
             speedSlider.setValue(snapSpeed(speed));
             speedLabel.setText("Speed " + formatSpeed(speed));
@@ -2082,8 +2187,7 @@ private void showLyricsMenu() {
                     artShadow.setAlpha(1f);
                     artShadow.setVisibility(View.INVISIBLE);
                 } else {
-                    art.setAlpha(0f);
-                    art.animate().alpha(1f).setDuration(250).start();
+                    popIn(art, 0.86f);      // a new cover scales up gently instead of fading
                 }
                 lastTint = tint;
                 if (!AmbientTheme.active(ctx()) && !videoOn) animateBackground(tint != 0 ? tint : surfaceColor);

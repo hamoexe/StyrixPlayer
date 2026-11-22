@@ -31,7 +31,7 @@ public final class PlaylistStyle {
                 : com.google.android.material.R.attr.colorOnPrimaryContainer);
         GradientDrawable d = new GradientDrawable();
         d.setColor(fill);
-        d.setCornerRadius(14 * iv.getResources().getDisplayMetrics().density);
+        d.setCornerRadius(18 * iv.getResources().getDisplayMetrics().density);
         iv.setBackground(d);
         iv.setImageTintList(ColorStateList.valueOf(fg));
     }

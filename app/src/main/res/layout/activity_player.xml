@@ -227,7 +227,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
+            android:layout_marginTop="18dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -280,25 +280,35 @@
                 android:contentDescription="Favorite"
                 android:src="@drawable/ic_favorite_border" />
 
-            <ImageButton
-                android:id="@+id/btn_playlist"
+            <FrameLayout
                 android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Add to playlist"
-                android:src="@drawable/ic_playlist_add"
-                android:tint="?attr/colorOnSurface" />
+                android:layout_height="48dp">
+
+                <ImageButton
+                    android:id="@+id/btn_playlist"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Add to playlist"
+                    android:src="@drawable/ic_playlist_add"
+                    android:tint="?attr/colorOnSurface" />
+
+                <com.hamo.styrixplayer.ui.DlRing
+                    android:id="@+id/dl_ring"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+            </FrameLayout>
         </LinearLayout>
 
         <com.hamo.styrixplayer.ui.HeatBar
             android:id="@+id/heat_bar"
             android:layout_width="match_parent"
-            android:layout_height="22dp"
+            android:layout_height="20dp"
             android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="16dp"
-            android:visibility="invisible" />
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
 
-        <com.google.android.material.slider.Slider
+        <com.hamo.styrixplayer.ui.WavySlider
             android:id="@+id/seek"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -331,13 +341,13 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="8dp"
             android:gravity="center"
             android:orientation="horizontal">
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="80dp"
+                android:layout_height="76dp"
                 android:layout_weight="1">
 
                 <ImageButton
@@ -353,7 +363,7 @@
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="80dp"
+                android:layout_height="76dp"
                 android:layout_weight="1">
 
                 <ImageButton
@@ -382,7 +392,7 @@
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="80dp"
+                android:layout_height="76dp"
                 android:layout_weight="1">
 
                 <ImageButton
@@ -398,7 +408,7 @@
 
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="80dp"
+                android:layout_height="76dp"
                 android:layout_weight="1">
 
                 <ImageButton
