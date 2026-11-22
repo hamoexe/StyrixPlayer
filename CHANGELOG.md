@@ -3,6 +3,14 @@
 Newest first. One entry per release you tag on GitHub (not one per build).
 Copy the entry into the release notes: the in-app updater shows that text.
 
+## 1.22.0
+- Choose your app icon: Settings > Appearance > App icon. New Kurdistan icon (flag-colour rings, 21-ray sun).
+- Two more icons: Christmas and Chrome.
+- Every icon has its own Android 13 themed version.
+
+## 1.21.5
+- New app icon: a wavy sound ring with a note, with an Android 13 themed (single colour) version.
+
 ## 1.21.4
 - Smoother seek bar: the thumb follows playback every frame instead of jumping twice a second.
 - Pressing download no longer makes the app feel heavy (the lookup runs at low priority).

@@ -73,6 +73,10 @@ public class SettingsActivity extends BaseActivity {
                 hex(AppTheme.customColor(this)));
         ((View) colorValue.getParent()).setOnClickListener(v -> pickColor(colorValue));
 
+        final TextView iconValue = addValueRow("App icon", "Change the icon on your home screen",
+                com.hamo.styrixplayer.AppIcons.NAMES[com.hamo.styrixplayer.AppIcons.current(this)]);
+        ((View) iconValue.getParent()).setOnClickListener(v -> pickIcon(iconValue));
+
         final TextView langValue = addValueRow("Language", "Choose language",
                 I18n.NAMES[I18n.prefIndex(this)]);
         ((View) langValue.getParent()).setOnClickListener(v ->
@@ -239,6 +243,59 @@ public class SettingsActivity extends BaseActivity {
     }
 
     /** Swatches plus a hex field. Picking a color switches to Custom unless Ambient is on. */
+    private void pickIcon(final TextView valueView) {
+        final int cur = com.hamo.styrixplayer.AppIcons.current(this);
+        final float d = getResources().getDisplayMetrics().density;
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), (int) (4 * d));
+        final androidx.appcompat.app.AlertDialog[] box = new androidx.appcompat.app.AlertDialog[1];
+        LinearLayout tiles = null;
+        final int perRow = 3;
+        final int count = com.hamo.styrixplayer.AppIcons.NAMES.length;
+        for (int i = 0; i < count; i++) {
+            final int idx = i;
+            if (i % perRow == 0) {
+                tiles = new LinearLayout(this);
+                tiles.setOrientation(LinearLayout.HORIZONTAL);
+                row.addView(tiles);
+            }
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+            tile.setPadding((int) (8 * d), (int) (8 * d), (int) (8 * d), (int) (8 * d));
+            android.widget.ImageView img = new android.widget.ImageView(this);
+            img.setImageResource(com.hamo.styrixplayer.AppIcons.PREVIEWS[i]);
+            tile.addView(img, new LinearLayout.LayoutParams((int) (64 * d), (int) (64 * d)));
+            TextView name = new TextView(this);
+            name.setText(I18n.t(com.hamo.styrixplayer.AppIcons.NAMES[i]));
+            name.setTextSize(13);
+            name.setGravity(android.view.Gravity.CENTER);
+            name.setPadding(0, (int) (6 * d), 0, 0);
+            name.setTextColor(MaterialColors.getColor(this,
+                    i == cur ? com.google.android.material.R.attr.colorPrimary
+                            : com.google.android.material.R.attr.colorOnSurface, 0));
+            if (i == cur) name.setTypeface(name.getTypeface(), android.graphics.Typeface.BOLD);
+            tile.addView(name);
+            tile.setOnClickListener(v -> {
+                if (idx != cur) {
+                    com.hamo.styrixplayer.AppIcons.set(this, idx);
+                    valueView.setText(com.hamo.styrixplayer.AppIcons.NAMES[idx]);
+                    android.widget.Toast.makeText(this,
+                            I18n.t("Icon changed. Your launcher may take a moment to update."),
+                            android.widget.Toast.LENGTH_LONG).show();
+                }
+                if (box[0] != null) box[0].dismiss();
+            });
+            tiles.addView(tile, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        for (int k = count % perRow; k != 0 && k < perRow; k++) {
+            tiles.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
+        }
+        box[0] = new ThemedDialogBuilder(this).setTitle("App icon").setView(row).show();
+    }
+
     private void pickColor(final TextView valueView) {
         final float d = getResources().getDisplayMetrics().density;
         final int[] chosen = {AppTheme.customColor(this)};
