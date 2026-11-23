@@ -54,6 +54,7 @@ final class I18nData {
         {"Paste a YouTube link and StyrixPlayer will save the audio to your music library, or the video with the quality you pick.", "الصق رابط يوتيوب وسيحفظ StyrixPlayer الصوت في مكتبة موسيقاك، أو الفيديو بالجودة التي تختارها.", "بەستەری یوتیووب بلکێنە و StyrixPlayer دەنگەکە دەخاتە کتێبخانەی مۆسیقاکەت، یان ڤیدیۆکە بەو کوالیتییەی هەڵیدەبژێریت.", "Bir YouTube bağlantısı yapıştırın, StyrixPlayer sesi müzik kitaplığınıza ya da videoyu seçtiğiniz kalitede kaydetsin."},
         {"Waiting…", "بانتظار الدور…", "چاوەڕێ دەکات…", "Sırada bekliyor…"},
         {"Audio", "صوت", "دەنگ", "Ses"},
+        {"Download started", "بدأ التنزيل", "داگرتن دەستی پێکرد", "İndirme başladı"},
         {"Download", "تنزيل", "داگرتن", "İndir"},
         {"Download video", "تنزيل الفيديو", "داگرتنی ڤیدیۆ", "Videoyu indir"},
         {"Choose quality", "اختر الجودة", "کوالیتی هەڵبژێرە", "Kalite seçin"},

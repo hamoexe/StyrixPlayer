@@ -80,7 +80,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
     private float miniH, miniInset;          // mini player size / side margin, px
     private ImageView morphArt;
     private ImageView morphMini;
-    private boolean miniSnapOk;
+    private boolean miniSnapOk, miniSnapNoMorph;
     private float miniSnapX;
     private View sheetContent;
     private boolean morphOk;
@@ -132,7 +132,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
     private View btnMore;
     private long accountFetchedAt;
     private EditText searchInput;
-    private LinearProgressIndicator miniProgress;
+    private RingProgress miniProgress;
 
     private PlayerConnection connection;
     @Nullable private MediaController controller;
@@ -199,6 +199,11 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        if (restoreTab < 0 && savedInstanceState != null) {
+            // the system rebuilt this screen itself (device dark/light mode, language)
+            restoreTab = savedInstanceState.getInt("tab", -1);
+            restoreSheet = savedInstanceState.getBoolean("sheet_open", false);
+        }
         mainRoot = findViewById(R.id.main_root);
         sheet = findViewById(R.id.player_sheet);
         morphArt = (ImageView) findViewById(R.id.morph_art);
@@ -298,6 +303,11 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
             }
 
             @Override
+            public void openPlayer() {
+                expandPlayer();
+            }
+
+            @Override
             public void launchLogin() {
                 startActivity(new Intent(MainActivity.this, YtLoginActivity.class));
             }
@@ -387,6 +397,14 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         restoreSheet = false;
 
         requestPermissionsThenLoad();
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putInt("tab", tab);
+        out.putBoolean("sheet_open", sheet != null && sheet.getVisibility() == View.VISIBLE
+                && sheet.getTranslationY() < 1f);
     }
 
     @Override
@@ -493,13 +511,18 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
     };
 
     private void prepareMorph() {
+        prepareMorphCore();
+        // no flying cover (the lyrics tab is open): the snapshot carries the mini cover too, so it
+        // slides in with the rest of the mini player instead of popping up at the very end
+        captureMiniSnapshot(!morphOk);
+    }
+
+    private void prepareMorphCore() {
         sheetContent = sheet.findViewById(R.id.player_content);
         miniH = miniPlayer.getHeight() > 0 ? miniPlayer.getHeight() : dp(75);
         ViewGroup.LayoutParams lp = miniPlayer.getLayoutParams();
         miniInset = lp instanceof ViewGroup.MarginLayoutParams
                 ? ((ViewGroup.MarginLayoutParams) lp).leftMargin : dp(12);
-
-        captureMiniSnapshot();
 
         morphOk = false;
         morphBig = null;
@@ -608,7 +631,8 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
      * cover) into a bitmap. The bitmap sits above the opening card and fades out with it, so the
      * mini player's text and buttons are not cut off the moment the swipe starts.
      */
-    private void captureMiniSnapshot() {
+    private void captureMiniSnapshot(boolean withCover) {
+        miniSnapNoMorph = withCover;
         miniSnapOk = false;
         int w = miniPlayer.getWidth();
         int h = miniPlayer.getHeight();
@@ -616,17 +640,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         try {
             Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             Canvas cv = new Canvas(bmp);
-            int artVis = miniArt.getVisibility();
-            miniArt.setVisibility(View.INVISIBLE);
-            ViewGroup g = (ViewGroup) miniPlayer;
-            for (int i = 0; i < g.getChildCount(); i++) {
-                View c = g.getChildAt(i);
-                cv.save();
-                cv.translate(c.getLeft(), c.getTop());
-                c.draw(cv);
-                cv.restore();
-            }
-            miniArt.setVisibility(artVis);
+            drawMini((ViewGroup) miniPlayer, cv, withCover);
             ViewGroup.LayoutParams lp = morphMini.getLayoutParams();
             lp.width = w;
             lp.height = h;
@@ -643,6 +657,37 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         }
     }
 
+    /** Draws the mini player (without its cover) into a canvas, then the cover with rounded corners. */
+    private void drawMini(ViewGroup g, Canvas cv, boolean withCover) {
+        int artVis = miniArt.getVisibility();
+        miniArt.setVisibility(View.INVISIBLE);
+        for (int i = 0; i < g.getChildCount(); i++) {
+            View c = g.getChildAt(i);
+            cv.save();
+            cv.translate(c.getLeft(), c.getTop());
+            c.draw(cv);
+            cv.restore();
+        }
+        if (withCover && miniArt.getWidth() > 0) {
+            miniArt.setVisibility(View.VISIBLE);
+            int x = miniArt.getLeft(), y = miniArt.getTop();
+            View parent = miniArt.getParent() instanceof View ? (View) miniArt.getParent() : null;
+            if (parent != null && parent != g) {
+                x += parent.getLeft();
+                y += parent.getTop();
+            }
+            cv.save();
+            cv.translate(x, y);
+            android.graphics.Path path = new android.graphics.Path();
+            path.addRoundRect(0, 0, miniArt.getWidth(), miniArt.getHeight(), dp(16), dp(16),
+                    android.graphics.Path.Direction.CW);
+            cv.clipPath(path);
+            miniArt.draw(cv);
+            cv.restore();
+        }
+        miniArt.setVisibility(artVis);
+    }
+
     private void updateMiniSnapshot(float p) {
         if (!miniSnapOk || p <= 0.001f || p >= 0.4f) {
             if (morphMini.getVisibility() != View.GONE) morphMini.setVisibility(View.GONE);
@@ -650,7 +695,8 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         }
         float t = clamp01(p / 0.32f);
         morphMini.setTranslationX(miniSnapX);
-        morphMini.setTranslationY(sheet.getTranslationY());
+        // closing without a flying cover: the mini player slides up into place as it appears
+        morphMini.setTranslationY(sheet.getTranslationY() + (miniSnapNoMorph ? dp(20) * t : 0f));
         morphMini.setAlpha(1f - t * t * (3f - 2f * t));
         if (morphMini.getVisibility() != View.VISIBLE) morphMini.setVisibility(View.VISIBLE);
     }
@@ -738,6 +784,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         private final float fling = 900 * getResources().getDisplayMetrics().density;
         private float downX, downY;
         private boolean dragging;
+        private int dismiss;   // 0 = not dismissing, 1 = swiping sideways, 2 = swiping down (mini player only)
         private VelocityTracker tracker;
 
         SheetDragger(boolean fromMini) {
@@ -759,6 +806,7 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
                     downX = e.getRawX();
                     downY = e.getRawY();
                     dragging = false;
+                    dismiss = 0;
                     if (tracker != null) tracker.recycle();
                     tracker = VelocityTracker.obtain();
                     track(e);
@@ -780,6 +828,18 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
                         prepareMorph();
                     }
                     if (dragging) setSheet(fromMini ? collapsedY + dy : dy);
+                    if (fromMini && !dragging && dismiss == 0 && sheet.getVisibility() != View.VISIBLE) {
+                        if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy)) dismiss = 1;
+                        else if (dy > slop && dy > Math.abs(dx)) dismiss = 2;
+                        if (dismiss != 0) v.setPressed(false);
+                    }
+                    if (dismiss != 0) {
+                        float w = Math.max(1, miniPlayer.getWidth());
+                        float off = dismiss == 1 ? dx : Math.max(0f, dy);
+                        miniPlayer.setTranslationX(dismiss == 1 ? dx : 0f);
+                        miniPlayer.setTranslationY(dismiss == 2 ? off : 0f);
+                        miniPlayer.setAlpha(clamp01(1f - Math.abs(off) / (dismiss == 1 ? w * 0.7f : dp(140))));
+                    }
                     return true;
                 }
 
@@ -791,9 +851,22 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
                     track(e);
                     tracker.computeCurrentVelocity(1000);
                     float vy = tracker.getYVelocity();
+                    float vx = tracker.getXVelocity();
                     float dy = e.getRawY() - downY;
                     tracker.recycle();
                     tracker = null;
+                    if (dismiss != 0) {
+                        float off = dismiss == 1 ? e.getRawX() - downX : Math.max(0f, dy);
+                        float v1 = dismiss == 1 ? vx : vy;
+                        float limit = dismiss == 1 ? miniPlayer.getWidth() * 0.35f : dp(56);
+                        boolean away = up && (Math.abs(off) > limit
+                                || (Math.abs(v1) > fling && (off > 0) == (v1 > 0)));
+                        if (away) dismissMini(dismiss, off >= 0 ? 1 : -1);
+                        else resetMini();
+                        dismiss = 0;
+                        dragging = false;
+                        return true;
+                    }
                     if (dragging) {
                         boolean expand;
                         if (up && Math.abs(vy) > fling) expand = vy < 0;
@@ -811,6 +884,35 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
                     return true;
             }
         }
+    }
+
+    /** Swipes the mini player away and stops playback. */
+    private void dismissMini(int mode, int dir) {
+        final float w = miniPlayer.getWidth();
+        miniPlayer.animate().cancel();
+        miniPlayer.animate()
+                .translationX(mode == 1 ? dir * w : 0f)
+                .translationY(mode == 2 ? dp(120) : 0f)
+                .alpha(0f)
+                .setDuration(200)
+                .setInterpolator(new DecelerateInterpolator(1.5f))
+                .withEndAction(() -> {
+                    if (controller != null) {
+                        controller.stop();
+                        controller.clearMediaItems();
+                    }
+                    miniPlayer.setVisibility(View.GONE);
+                    miniPlayer.setTranslationX(0f);
+                    miniPlayer.setTranslationY(0f);
+                    miniPlayer.setAlpha(1f);
+                })
+                .start();
+    }
+
+    private void resetMini() {
+        miniPlayer.animate().cancel();
+        miniPlayer.animate().translationX(0f).translationY(0f).alpha(1f)
+                .setDuration(200).setInterpolator(new DecelerateInterpolator(1.5f)).start();
     }
 
     @Override
@@ -1242,6 +1344,12 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
             Toast.makeText(this, R.string.not_ready, Toast.LENGTH_SHORT).show();
             return;
         }
+        MediaItem cur = controller.getCurrentMediaItem();
+        if (cur != null && position >= 0 && position < list.size()
+                && String.valueOf(list.get(position).id).equals(cur.mediaId)) {
+            expandPlayer(); // already playing this one: just open it
+            return;
+        }
         SongActions.playList(controller, list, position, false);
     }
 
@@ -1278,12 +1386,39 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         if (ytPage != null) ytPage.setPlayingId(id);
     }
 
+    /**
+     * The mini player floats over the lists instead of pushing them up: the lists run underneath it
+     * and get bottom padding so the last row can still scroll clear of it.
+     */
+    private void applyMiniOverlap(boolean miniShown) {
+        View area = findViewById(R.id.content_area);
+        if (area == null) return;
+        int over = miniShown ? dp(84) : 0; // mini card (70dp) plus its margins
+        ViewGroup.LayoutParams lp = area.getLayoutParams();
+        if (lp instanceof ViewGroup.MarginLayoutParams
+                && ((ViewGroup.MarginLayoutParams) lp).bottomMargin != -over) {
+            ((ViewGroup.MarginLayoutParams) lp).bottomMargin = -over;
+            area.setLayoutParams(lp);
+        }
+        int[] ids = {R.id.list_songs, R.id.list_favs, R.id.list_playlists, R.id.yt_list};
+        for (int id : ids) {
+            View l = findViewById(id);
+            if (l == null) continue;
+            int base = id == R.id.list_playlists ? dp(24) : dp(12);
+            if (l.getPaddingBottom() != base + over) {
+                l.setPadding(l.getPaddingLeft(), l.getPaddingTop(), l.getPaddingRight(), base + over);
+            }
+        }
+    }
+
     private void updateMini() {
         if (controller == null || controller.getMediaItemCount() == 0
                 || controller.getCurrentMediaItem() == null) {
             miniPlayer.setVisibility(View.GONE);
+            applyMiniOverlap(false);
             return;
         }
+        applyMiniOverlap(true);
         MediaItem item = controller.getCurrentMediaItem();
         MediaMetadata md = item.mediaMetadata;
         miniTitle.setText(md.title != null ? md.title : "");
@@ -1294,6 +1429,8 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         miniPlayPause.setImageResource(controller.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
 
         if (miniPlayer.getVisibility() != View.VISIBLE) {
+            miniPlayer.animate().cancel();
+            miniPlayer.setTranslationX(0f);
             miniPlayer.setAlpha(0f);
             miniPlayer.setTranslationY(10f * getResources().getDisplayMetrics().density);
             miniPlayer.setVisibility(View.VISIBLE);
@@ -1312,11 +1449,11 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         if (controller == null) return;
         long duration = controller.getDuration();
         if (duration <= 0) {
-            miniProgress.setProgressCompat(0, false);
+            miniProgress.setProgress(0);
             return;
         }
         int p = (int) (1000L * Math.max(0, controller.getCurrentPosition()) / duration);
-        miniProgress.setProgressCompat(Math.min(p, 1000), false);
+        miniProgress.setProgress(Math.min(p, 1000));
     }
 
     // ---------- playlists ----------

@@ -3,6 +3,20 @@
 Newest first. One entry per release you tag on GitHub (not one per build).
 Copy the entry into the release notes: the in-app updater shows that text.
 
+## 1.22.2
+- Fixed: the Settings switches all showed "off" after changing language or the device theme.
+- Fixed: after changing language or the device theme the tab bar and the page could disagree (YouTube selected, Songs shown).
+- Fixed: the playing song's row could keep the previous song's colour.
+- Tapping the song that is playing now opens the player instead of restarting it.
+- Swipe the mini player sideways or down to close it and stop playback.
+- Mini player: song progress is now a ring around the play button instead of a bar.
+- The mini player now floats over the lists instead of having its own dark strip; the lists scroll underneath it.
+- Closing the player from the lyrics tab: the mini player slides in with its cover instead of popping up at the end.
+
+## 1.22.1
+- Media notification and lock screen: heart button (likes the song on YouTube Music, or adds a phone song to Favorites) and a download button for streamed songs.
+- The notification badge is now the StyrixPlayer note-and-ring icon instead of the default.
+
 ## 1.22.0
 - Choose your app icon: Settings > Appearance > App icon. New Kurdistan icon (flag-colour rings, 21-ray sun).
 - Two more icons: Christmas and Chrome.

@@ -15,8 +15,6 @@ import android.widget.ImageView;
 import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.content.res.ColorStateList;
-import androidx.core.content.ContextCompat;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -58,6 +56,7 @@ final class YtPage {
         @Nullable MediaController controller();
         void setTitle(String title);
         void launchLogin();
+        void openPlayer();
     }
 
     static final String ROOT_TITLE = "YouTube Music";
@@ -135,7 +134,6 @@ final class YtPage {
         });
 
         setupSearchBox(context);
-        signIn.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(signIn.getContext(), android.R.color.holo_red_dark)));
         signIn.setOnClickListener(v -> host.launchLogin());
         retry.setOnClickListener(v -> load());
         pull.setOnRefreshListener(this::load);
@@ -371,6 +369,11 @@ final class YtPage {
         MediaController c = host.controller();
         if (c == null) {
             Toast.makeText(app, R.string.not_ready, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        MediaItem now = c.getCurrentMediaItem();
+        if (now != null && isPlaying(item)) {
+            host.openPlayer(); // already playing this one: just open it
             return;
         }
         List<MediaItem> queue = new ArrayList<>();

@@ -28,6 +28,8 @@ import androidx.media3.session.SessionResult;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.hamo.styrixplayer.I18n;
+import com.hamo.styrixplayer.R;
 import com.hamo.styrixplayer.data.Db;
 import com.hamo.styrixplayer.data.Prefs;
 import com.hamo.styrixplayer.ui.MainActivity;
@@ -43,6 +45,23 @@ import java.io.IOException;
  * "resume", and applies per-track speed.
  */
 public class PlaybackService extends MediaSessionService {
+
+    /** Heart and download buttons in the media notification. */
+    private static final String ACTION_FAV = "com.hamo.styrixplayer.NOTIF_FAV";
+    private static final String ACTION_DL = "com.hamo.styrixplayer.NOTIF_DL";
+    private static final SessionCommand FAV_COMMAND = new SessionCommand(ACTION_FAV, Bundle.EMPTY);
+    private static final SessionCommand DL_COMMAND = new SessionCommand(ACTION_DL, Bundle.EMPTY);
+    private static PlaybackService instance;
+    private com.google.common.collect.ImmutableList<androidx.media3.session.CommandButton> layout =
+            com.google.common.collect.ImmutableList.of();
+    private String layoutKey = "";
+
+    /** Re-reads heart / download state (call after a like or favorite changes elsewhere). */
+    public static void refreshButtons() {
+        final PlaybackService s = instance;
+        if (s != null) s.scheduleLayout();
+    }
+
 
     public static final String ACTION_SLEEP_TIMER = "com.hamo.styrixplayer.SLEEP_TIMER";
     public static final String EXTRA_MINUTES = "minutes";
@@ -98,6 +117,7 @@ public class PlaybackService extends MediaSessionService {
         @Override
         public void onMediaItemTransition(@Nullable MediaItem item, int reason) {
             ytRetries = 0;
+            scheduleLayout();
             applyTrackSpeed(item);
             saveResume();
         }
@@ -149,9 +169,13 @@ public class PlaybackService extends MediaSessionService {
             SessionCommands commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
                     .buildUpon()
                     .add(SLEEP_COMMAND)
+                    .add(FAV_COMMAND)
+                    .add(DL_COMMAND)
                     .build();
-            return MediaSession.ConnectionResult.accept(
-                    commands, MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS);
+            return new MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(commands)
+                    .setCustomLayout(layout)
+                    .build();
         }
 
         @Override
@@ -165,13 +189,136 @@ public class PlaybackService extends MediaSessionService {
                 if (minutes > 0) handler.postDelayed(sleepRunnable, minutes * 60_000L);
                 return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
             }
+            if (ACTION_FAV.equals(customCommand.customAction)) {
+                toggleHeart();
+                return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
+            }
+            if (ACTION_DL.equals(customCommand.customAction)) {
+                downloadCurrent();
+                return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
+            }
             return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED));
         }
     };
 
+    @Nullable
+    private String currentYtId() {
+        MediaItem it = player == null ? null : player.getCurrentMediaItem();
+        return it != null && YtTrack.isYtId(it.mediaId)
+                ? it.mediaId.substring(YtTrack.ID_PREFIX.length()) : null;
+    }
+
+    private long currentLocalId() {
+        MediaItem it = player == null ? null : player.getCurrentMediaItem();
+        if (it == null || YtTrack.isYtId(it.mediaId)) return -1;
+        try {
+            return Long.parseLong(it.mediaId);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** The heart: likes the song on YouTube Music, or adds a phone song to Favorites. */
+    private void toggleHeart() {
+        final String yt = currentYtId();
+        if (yt != null) {
+            if (!com.hamo.styrixplayer.yt.YtAuth.isSignedIn(this)) {
+                android.widget.Toast.makeText(this, I18n.t("Sign in to YouTube (Settings) to like songs"),
+                        android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            final boolean liked = !com.hamo.styrixplayer.yt.YtLikes.isLiked(this, yt);
+            com.hamo.styrixplayer.yt.YtLikes.set(this, yt, liked);
+            updateLayout();
+            final android.content.Context app = getApplicationContext();
+            new Thread(() -> {
+                try {
+                    com.hamo.styrixplayer.yt.YtMusicApi.setLiked(app, yt, liked);
+                } catch (Exception e) {
+                    com.hamo.styrixplayer.yt.YtLikes.set(app, yt, !liked);
+                    handler.post(this::updateLayout);
+                }
+            }, "notif-like").start();
+            return;
+        }
+        long id = currentLocalId();
+        if (id < 0) return;
+        Db.get(this).toggleFavorite(id);
+        updateLayout();
+    }
+
+    /** The download button: saves the streamed song to the phone. */
+    private void downloadCurrent() {
+        String yt = currentYtId();
+        MediaItem cur = player == null ? null : player.getCurrentMediaItem();
+        if (yt == null || cur == null) return;
+        androidx.media3.common.MediaMetadata m = cur.mediaMetadata;
+        com.hamo.styrixplayer.yt.YtDownloads.start(this, yt,
+                m.title == null ? "" : m.title.toString(),
+                m.artist == null ? "" : m.artist.toString(),
+                m.artworkUri == null ? "" : m.artworkUri.toString());
+        android.widget.Toast.makeText(this, I18n.t("Download started"),
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    // download progress arrives on a worker thread; the session must be touched on the main one
+    private final Runnable layoutTask = this::updateLayout;
+
+    /** One refresh a moment later, however many requests come in (song changes, download progress). */
+    private void scheduleLayout() {
+        handler.removeCallbacks(layoutTask);
+        handler.postDelayed(layoutTask, 500);
+    }
+
+    private final Runnable layoutRefresh = this::scheduleLayout;
+
+    /** Builds the heart + download buttons for the playing song and hands them to the notification. */
+    private void updateLayout() {
+        if (mediaSession == null || player == null) return;
+        String yt = currentYtId();
+        long local = currentLocalId();
+        boolean liked = false, canDownload = false, hasHeart = false;
+        if (yt != null) {
+            hasHeart = true;
+            liked = com.hamo.styrixplayer.yt.YtLikes.isLiked(this, yt);
+            canDownload = com.hamo.styrixplayer.yt.YtLocal.songIdFor(this, yt) <= 0;
+        } else if (local >= 0) {
+            hasHeart = true;
+            liked = Db.get(this).isFavorite(local);
+        }
+        String key = hasHeart + "/" + liked + "/" + canDownload;
+        if (key.equals(layoutKey)) return;
+        layoutKey = key;
+        com.google.common.collect.ImmutableList.Builder<androidx.media3.session.CommandButton> b =
+                com.google.common.collect.ImmutableList.builder();
+        if (hasHeart) {
+            b.add(new androidx.media3.session.CommandButton.Builder()
+                    .setDisplayName(I18n.t(liked ? "Remove from favorites" : "Add to favorites"))
+                    .setIconResId(liked ? R.drawable.ic_favorite : R.drawable.ic_favorite_border)
+                    .setSessionCommand(FAV_COMMAND)
+                    .build());
+        }
+        if (canDownload) {
+            b.add(new androidx.media3.session.CommandButton.Builder()
+                    .setDisplayName(I18n.t("Download"))
+                    .setIconResId(R.drawable.ic_download)
+                    .setSessionCommand(DL_COMMAND)
+                    .build());
+        }
+        layout = b.build();
+        mediaSession.setCustomLayout(layout);
+    }
+
+    @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
+        // the little badge on the cover in the notification: our own icon, not media3's default
+        androidx.media3.session.DefaultMediaNotificationProvider provider =
+                new androidx.media3.session.DefaultMediaNotificationProvider(this);
+        provider.setSmallIcon(R.drawable.ic_stat_note);
+        setMediaNotificationProvider(provider);
         AudioAttributes attrs = new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -219,6 +366,19 @@ public class PlaybackService extends MediaSessionService {
                 .setCallback(callback)
                 .setSessionActivity(openPlayer)
                 .build();
+        com.hamo.styrixplayer.yt.YtDownloads.addListener(layoutRefresh);
+        scheduleLayout();
+    }
+
+    /**
+     * Stay a foreground service while paused. Without this, media3 drops to a plain background
+     * service the moment playback pauses, and aggressive battery managers (HyperOS and friends)
+     * kill it a minute later, taking the notification with it.
+     */
+    @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
+    @Override
+    public void onUpdateNotification(MediaSession session, boolean startInForegroundRequired) {
+        super.onUpdateNotification(session, true);
     }
 
     @Nullable
@@ -252,6 +412,8 @@ public class PlaybackService extends MediaSessionService {
 
     @Override
     public void onDestroy() {
+        instance = null;
+        com.hamo.styrixplayer.yt.YtDownloads.removeListener(layoutRefresh);
         handler.removeCallbacksAndMessages(null);
         if (player != null) {
             if (player.getMediaItemCount() > 0) saveResume();

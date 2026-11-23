@@ -98,6 +98,7 @@ public final class SongActions {
                     break;
                 case 3:
                     Db.get(a).toggleFavorite(song.id);
+                    com.hamo.styrixplayer.playback.PlaybackService.refreshButtons();
                     if (onChanged != null) onChanged.run();
                     break;
                 case 4:

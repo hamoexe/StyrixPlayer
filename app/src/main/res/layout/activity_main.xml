@@ -117,6 +117,7 @@
         </LinearLayout>
 
         <FrameLayout
+            android:id="@+id/content_area"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1">
@@ -494,15 +495,27 @@
                         android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
-                <ImageButton
-                    android:id="@+id/mini_play_pause"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:background="@drawable/bg_mini_play"
-                    android:contentDescription="Play or pause"
-                    android:padding="12dp"
-                    android:src="@drawable/ic_play"
-                    android:tint="?attr/colorOnPrimary" />
+                <FrameLayout
+                    android:layout_width="56dp"
+                    android:layout_height="56dp">
+
+                    <!-- song progress as a ring around the play button -->
+                    <com.hamo.styrixplayer.ui.RingProgress
+                        android:id="@+id/mini_progress"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+
+                    <ImageButton
+                        android:id="@+id/mini_play_pause"
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_mini_play"
+                        android:contentDescription="Play or pause"
+                        android:padding="11dp"
+                        android:src="@drawable/ic_play"
+                        android:tint="?attr/colorOnPrimary" />
+                </FrameLayout>
 
                 <ImageButton
                     android:id="@+id/mini_next"
@@ -516,14 +529,6 @@
                     android:tint="?attr/colorOnSurface" />
             </LinearLayout>
 
-            <com.google.android.material.progressindicator.LinearProgressIndicator
-                android:id="@+id/mini_progress"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="20dp"
-                android:layout_marginBottom="11dp"
-                app:trackCornerRadius="2dp"
-                app:trackThickness="4dp" />
         </LinearLayout>
 
         <com.google.android.material.bottomnavigation.BottomNavigationView

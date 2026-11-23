@@ -43,6 +43,44 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.Holder> {
         this.longListener = longListener;
     }
 
+    /** The playing row's color wash. It is colored straight from the live palette, never from a cached theme color. */
+    private static final class Wash extends android.graphics.drawable.GradientDrawable {}
+
+    private int washColor(View v) {
+        AmbientTheme.Palette p = AmbientTheme.active(v.getContext()) ? AmbientTheme.current() : null;
+        return p != null ? p.soft
+                : MaterialColors.getColor(v, com.google.android.material.R.attr.colorPrimaryContainer);
+    }
+
+    private android.graphics.drawable.Drawable wash(View v) {
+        Wash w = new Wash();
+        w.setCornerRadius(24f * v.getResources().getDisplayMetrics().density);
+        w.setColor(washColor(v));
+        return w;
+    }
+
+    private RecyclerView attachedTo;
+    private final AmbientTheme.Listener paletteListener = p -> {
+        RecyclerView rv = attachedTo;
+        if (rv == null) return;
+        for (int i = 0; i < rv.getChildCount(); i++) {
+            View c = rv.getChildAt(i);
+            if (c.getBackground() instanceof Wash) ((Wash) c.getBackground()).setColor(p.soft);
+        }
+    };
+
+    @Override
+    public void onAttachedToRecyclerView(@NonNull RecyclerView rv) {
+        attachedTo = rv;
+        AmbientTheme.register(paletteListener);
+    }
+
+    @Override
+    public void onDetachedFromRecyclerView(@NonNull RecyclerView rv) {
+        AmbientTheme.unregister(paletteListener);
+        attachedTo = null;
+    }
+
     /** Highlights the row of the song that is currently playing. */
     public void setPlayingId(@Nullable String id) {
         String old = playingId;
@@ -74,7 +112,8 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.Holder> {
         h.title.setText(s.cleanTitle);
         h.title.setTextColor(playing ? activeColor : normalColor);
         // the playing row gets a real color wash (primary container follows the cover live)
-        h.itemView.setBackgroundResource(playing ? R.drawable.bg_song_row_playing : R.drawable.bg_song_row);
+        if (playing) h.itemView.setBackground(wash(h.itemView));
+        else h.itemView.setBackgroundResource(R.drawable.bg_song_row);
         h.title.setTypeface(Typeface.create("sans-serif-medium", playing ? Typeface.BOLD : Typeface.NORMAL));
 
         h.subtitle.setText(songLine(s));

@@ -465,6 +465,7 @@ public class SettingsActivity extends BaseActivity {
         View row = inflateRow(title, summary);
         MaterialSwitch sw = row.findViewById(R.id.row_switch);
         sw.setVisibility(View.VISIBLE);
+        sw.setSaveEnabled(false); // every row shares one view id: restored state would hit them all
         AppTheme.tintSwitch(sw);
         sw.setChecked(Prefs.getBool(this, key, def));
         sw.setOnCheckedChangeListener((b, checked) -> Prefs.setBool(this, key, checked));
@@ -476,6 +477,7 @@ public class SettingsActivity extends BaseActivity {
         View row = inflateRow(title, summary);
         MaterialSwitch sw = row.findViewById(R.id.row_switch);
         sw.setVisibility(View.VISIBLE);
+        sw.setSaveEnabled(false);
         AppTheme.tintSwitch(sw);
         sw.setChecked(!Prefs.getBool(this, key, storedDefault));
         sw.setOnCheckedChangeListener((b, checked) -> Prefs.setBool(this, key, !checked));

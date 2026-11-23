@@ -1669,6 +1669,7 @@ private void showLyricsMenu() {
     }
 
     private void updateFavorite() {
+        com.hamo.styrixplayer.playback.PlaybackService.refreshButtons();
         String yt = ytVideoId();
         if (yt != null) {
             boolean liked = YtLikes.isLiked(ctx(), yt);
