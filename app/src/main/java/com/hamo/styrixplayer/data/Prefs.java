@@ -24,6 +24,12 @@ public final class Prefs {
     public static final String SMART_TITLES = "smart_titles";    // clean up messy titles
     public static final String VIDEO_AMBIENT = "video_ambient";    // 0 calm, 1 normal, 2 fast, 3 live
     public static final String BG_MESH = "bg_mesh";              // corner-to-corner color mesh behind the player (off: blurred cover)
+    public static final String VISUALIZER = "visualizer";        // dancing bars above the seek bar
+    public static final String VIZ_STYLE = "viz_style";          // 0 bars, 1 smooth line
+    public static final String VIZ_GAIN = "viz_gain";            // 0..100, how strongly it reacts
+    public static final String VIZ_SMOOTH = "viz_smooth";        // 0..100, how calm the movement is
+    public static final String VIZ_LO = "viz_lo";                // 0..100, lowest part of the spectrum shown
+    public static final String VIZ_HI = "viz_hi";                // 0..100, highest part of the spectrum shown
     public static final String HEATMAP = "heatmap";                // most-played graph above the seek bar
     public static final String SONG_SORT = "song_sort";           // 0 title, 1 artist, 2 longest, 3 shortest
     public static final String MUSIC_CACHE_MB = "music_cache_mb"; // streamed-song cache size, 0 = off

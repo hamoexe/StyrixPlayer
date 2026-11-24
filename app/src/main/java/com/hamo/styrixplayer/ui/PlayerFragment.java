@@ -63,6 +63,7 @@ import com.hamo.styrixplayer.yt.YtDownloads;
 import com.hamo.styrixplayer.yt.YtLikes;
 import com.hamo.styrixplayer.yt.YtLocal;
 import com.hamo.styrixplayer.yt.YtMusicApi;
+import com.hamo.styrixplayer.yt.YtReplays;
 import com.hamo.styrixplayer.yt.YtTrack;
 import com.hamo.styrixplayer.data.Db;
 import com.hamo.styrixplayer.data.Library;
@@ -198,11 +199,13 @@ public class PlayerFragment extends Fragment {
     private String artForId;
     private LayerDrawable bgLayers;
     private HeatBar heatBar;
+    private VisualizerView viz;
     @Nullable private String heatKey;
     private int[] heat = new int[HeatBar.SLICES];
     private int heatLast = -1;
     private long heatLastPos = -1, heatSaved;
     private boolean heatDirty;
+    @Nullable private int[] heatReal;        // YouTube's own "most replayed" graph for this song, when it has one
     @Nullable private ValueAnimator blurAnim;
     @Nullable private Bitmap lastBlur;
     @Nullable private Bitmap panelBlur;
@@ -347,6 +350,7 @@ public class PlayerFragment extends Fragment {
         speedLabel = findViewById(R.id.speed_label);
         speedSlider = findViewById(R.id.speed_slider);
         heatBar = findViewById(R.id.heat_bar);
+        viz = findViewById(R.id.viz);
         switchPitch = findViewById(R.id.switch_pitch);
         AppTheme.tintSwitch(switchPitch);
         btnShuffle = findViewById(R.id.btn_shuffle);
@@ -579,9 +583,18 @@ public class PlayerFragment extends Fragment {
         return view;
     }
 
+    /** The dancing bars: on when the setting is on, hidden over video (no room under it). */
+    private void updateViz() {
+        if (viz == null) return;
+        boolean on = Prefs.getBool(ctx(), Prefs.VISUALIZER, false) && !videoOn;
+        viz.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (on) viz.reload();
+    }
+
     @Override
     public void onStart() {
         super.onStart();
+        updateViz();
         YtDownloads.addListener(downloadsChanged);
         YtDownloads.addWatcher(dlWatcher);
         AmbientTheme.register(ambientListener);
@@ -781,11 +794,14 @@ private void showLyricsMenu() {
     }
     labels.add(custom ? "Discard my version and search online" : "Search again"); actions.add(4);
     
-    // --- CHANGE 1: Update the label at the top to support BiniLyrics ---
+    // Show the selected lyrics source in the lyrics menu.
     String selectedProvider = prefs.getString("lyrics_provider", "auto");
     String providerLabel = "lrclib".equals(selectedProvider) ? "LRCLIB" :
-            "lyricsplus".equals(selectedProvider) ? "LyricsPlus" : 
-            "binilyrics".equals(selectedProvider) ? "BiniLyrics" : "Automatic (recommended)";
+            "lyricsplus".equals(selectedProvider) ? "LyricsPlus" :
+            "binilyrics".equals(selectedProvider) ? "BiniLyrics" :
+            "kugou".equals(selectedProvider) ? "Kugou" :
+            "qqmusic".equals(selectedProvider) ? "QQ Music" :
+            "netease".equals(selectedProvider) ? "NetEase" : "Automatic (recommended)";
     labels.add("Lyrics source · " + providerLabel); actions.add(5);
 
     new ThemedDialogBuilder(requireActivity())
@@ -810,29 +826,35 @@ private void showLyricsMenu() {
                     return;
                 }
                 if (action == 5) {
-                    // --- CHANGE 2: Add BiniLyrics to the sources array ---
                     String[] sources = {
-                        "Automatic (LyricsPlus → BiniLyrics → LRCLIB)", 
-                        "LRCLIB only", 
-                        "LyricsPlus only", 
-                        "BiniLyrics only"
+                        "Automatic (LyricsPlus → BiniLyrics → Kugou → QQ Music → NetEase → LRCLIB)",
+                        "LRCLIB only",
+                        "LyricsPlus only",
+                        "BiniLyrics only",
+                        "Kugou only",
+                        "QQ Music only",
+                        "NetEase only"
                     };
-                    
+
                     String current = prefs.getString("lyrics_provider", "auto");
-                    
-                    // --- CHANGE 3: Update the checked index logic ---
-                    int checked = "lrclib".equals(current) ? 1 : 
-                                  "lyricsplus".equals(current) ? 2 : 
-                                  "binilyrics".equals(current) ? 3 : 0;
-                                  
+
+                    int checked = "lrclib".equals(current) ? 1 :
+                                  "lyricsplus".equals(current) ? 2 :
+                                  "binilyrics".equals(current) ? 3 :
+                                  "kugou".equals(current) ? 4 :
+                                  "qqmusic".equals(current) ? 5 :
+                                  "netease".equals(current) ? 6 : 0;
+
                     new ThemedDialogBuilder(requireActivity())
                             .setTitle("Choose lyrics source")
                             .setSingleChoiceItems(sources, checked, (d, selectedIndex) -> {
-                                // --- CHANGE 4: Map the selected index to the correct string value ---
-                                String value = selectedIndex == 1 ? "lrclib" : 
-                                               selectedIndex == 2 ? "lyricsplus" : 
-                                               selectedIndex == 3 ? "binilyrics" : "auto";
-                                               
+                                String value = selectedIndex == 1 ? "lrclib" :
+                                               selectedIndex == 2 ? "lyricsplus" :
+                                               selectedIndex == 3 ? "binilyrics" :
+                                               selectedIndex == 4 ? "kugou" :
+                                               selectedIndex == 5 ? "qqmusic" :
+                                               selectedIndex == 6 ? "netease" : "auto";
+
                                 prefs.edit().putString("lyrics_provider", value).apply();
                                 Db.LyricsRow cached = Db.get(ctx()).getLyrics(id);
                                 if (cached != null && !cached.custom) Db.get(ctx()).deleteLyrics(id);
@@ -1371,6 +1393,7 @@ private void showLyricsMenu() {
      */
     private void applyVideoLayout(boolean animate) {
         if (artFrame == null || videoBox == null || lyricsView == null) return;
+        updateViz();
         int w = artFrame.getWidth();
         if (w <= 0) w = getResources().getDisplayMetrics().widthPixels - dpx(44);
         // Video mode: the picture runs edge to edge (past the page's 24dp side padding), 16:9.
@@ -1797,6 +1820,8 @@ private void showLyricsMenu() {
             heat = HeatBar.load(ctx(), key);
             heatLast = -1;
             heatLastPos = -1;
+            heatReal = null;
+            fetchRealHeat(item, key);
         }
         long pos = Math.max(0, controller.getCurrentPosition());
         if (controller.isPlaying()) {
@@ -1814,10 +1839,35 @@ private void showLyricsMenu() {
             }
         }
         heatLastPos = pos;
-        boolean visible = heatBar.setData(heat);
+        boolean visible = heatBar.setData(heatReal != null ? heatReal : heat);
         heatBar.setVisibility(visible ? View.VISIBLE : View.GONE);
         long now = android.os.SystemClock.elapsedRealtime();
         if (heatDirty && now - heatSaved > 20_000) saveHeat();
+    }
+
+    /** Asks YouTube (once, in the background) for the song's real most-replayed graph. */
+    private void fetchRealHeat(@Nullable MediaItem item, final String key) {
+        final String base = baseVideoId(item);
+        if (base == null) return;
+        final String video = YtMusicApi.peekVideo(ctx(), base);
+        final Context app = ctx().getApplicationContext();
+        io.execute(() -> {
+            int[] r = YtReplays.get(app, base, HeatBar.SLICES);
+            if (r == null && video != null && !video.isEmpty() && !video.equals(base)) {
+                r = YtReplays.get(app, video, HeatBar.SLICES);
+            }
+            if (r == null || !isAdded()) return;
+            final int[] got = r;
+            requireActivity().runOnUiThread(() -> {
+                if (key.equals(heatKey)) {
+                    heatReal = got;
+                    if (heatBar != null) {
+                        boolean visible = heatBar.setData(got);
+                        heatBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+                    }
+                }
+            });
+        });
     }
 
     private void saveHeat() {

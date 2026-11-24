@@ -1,6 +1,7 @@
 package com.hamo.styrixplayer.lyrics;
 
 import android.content.Context;
+import android.util.Base64;
 
 import androidx.annotation.Nullable;
 
@@ -11,6 +12,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.Locale;
+import java.util.zip.InflaterInputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -274,6 +277,18 @@ public final class LyricsRepo {
             try { return fetchBini(title, artist, album, durationMs); }
             catch (IOException | JSONException e) { throw new IOException("BiniLyrics: " + e.getMessage()); }
         }
+        if ("kugou".equals(provider)) {
+            try { return fetchKugou(title, artist, durationMs, relaxed); }
+            catch (IOException | JSONException e) { throw new IOException("Kugou: " + e.getMessage()); }
+        }
+        if ("qqmusic".equals(provider)) {
+            try { return fetchQqMusic(title, artist, durationMs, relaxed); }
+            catch (IOException | JSONException e) { throw new IOException("QQ Music: " + e.getMessage()); }
+        }
+        if ("netease".equals(provider)) {
+            try { return fetchNetease(title, artist, durationMs, relaxed); }
+            catch (IOException | JSONException e) { throw new IOException("NetEase: " + e.getMessage()); }
+        }
         if (speed) {
             // LRCLIB first: it tells us how long the original is, so we can stretch the time stamps
             try {
@@ -295,6 +310,30 @@ public final class LyricsRepo {
                 } catch (IOException | JSONException e) {
                     if (errors.length() > 0) errors.append('\n');
                     errors.append("BiniLyrics: ").append(e.getMessage());
+                }
+            }
+            if (best == null) {
+                try {
+                    best = fetchKugou(title, artist, orig > 0 ? orig : durationMs, true);
+                } catch (IOException | JSONException e) {
+                    if (errors.length() > 0) errors.append('\n');
+                    errors.append("Kugou: ").append(e.getMessage());
+                }
+            }
+            if (best == null) {
+                try {
+                    best = fetchQqMusic(title, artist, orig > 0 ? orig : durationMs, true);
+                } catch (IOException | JSONException e) {
+                    if (errors.length() > 0) errors.append('\n');
+                    errors.append("QQ Music: ").append(e.getMessage());
+                }
+            }
+            if (best == null) {
+                try {
+                    best = fetchNetease(title, artist, orig > 0 ? orig : durationMs, true);
+                } catch (IOException | JSONException e) {
+                    if (errors.length() > 0) errors.append('\n');
+                    errors.append("NetEase: ").append(e.getMessage());
                 }
             }
             if (best == null) best = lr;
@@ -321,6 +360,27 @@ public final class LyricsRepo {
         } catch (IOException | JSONException e) {
             if (errors.length() > 0) errors.append('\n');
             errors.append("BiniLyrics: ").append(e.getMessage());
+        }
+        try {
+            Found f = fetchKugou(title, artist, durationMs, relaxed);
+            if (f != null) return f;
+        } catch (IOException | JSONException e) {
+            if (errors.length() > 0) errors.append('\n');
+            errors.append("Kugou: ").append(e.getMessage());
+        }
+        try {
+            Found f = fetchQqMusic(title, artist, durationMs, relaxed);
+            if (f != null) return f;
+        } catch (IOException | JSONException e) {
+            if (errors.length() > 0) errors.append('\n');
+            errors.append("QQ Music: ").append(e.getMessage());
+        }
+        try {
+            Found f = fetchNetease(title, artist, durationMs, relaxed);
+            if (f != null) return f;
+        } catch (IOException | JSONException e) {
+            if (errors.length() > 0) errors.append('\n');
+            errors.append("NetEase: ").append(e.getMessage());
         }
         try {
             Found f = fetchLrclib(title, artist, album, durationMs, relaxed ? CLOSEST : STRICT);
@@ -444,6 +504,530 @@ public final class LyricsRepo {
         return lrc == null ? null : new Found(lrc, null, false, bestDur);
     }
 
+    /**
+     * Kugou lookup. Resolve a track hash first, then ask Kugou for matching lyric candidates.
+     * Candidate title, artist and duration are checked before any lyric is accepted. KRC is
+     * preferred because it contains word timings; LRC is the fallback when KRC cannot be decoded.
+     */
+    @Nullable
+    private static Found fetchKugou(String title, String artist, long durationMs, boolean relaxed)
+            throws IOException, JSONException {
+        String t = title == null ? "" : title.trim();
+        if (t.isEmpty()) return null;
+
+        String wantedArtist = isUnknown(artist) ? "" : artist.trim();
+
+        // The tested song-search endpoint returns the hash needed by Kugou's lyric catalogue.
+        // Try several query orders because the search ranking changes with query composition.
+        String[] queries = wantedArtist.isEmpty()
+                ? new String[]{t}
+                : new String[]{t + " " + wantedArtist, wantedArtist + " " + t, t};
+        Set<String> seenHashes = new HashSet<>();
+        List<JSONObject> songMatches = new ArrayList<>();
+        List<Long> songScores = new ArrayList<>();
+
+        for (String query : queries) {
+            String songSearchUrl = "https://mobileservice.kugou.com/api/v3/search/song?keyword="
+                    + enc(query) + "&page=1&pagesize=20&showtype=1";
+            String songSearchBody = httpUrl(songSearchUrl, 20000);
+            if (songSearchBody == null) continue;
+
+            JSONObject songSearch = parseJsonObject(songSearchBody);
+            JSONObject data = songSearch.optJSONObject("data");
+            JSONArray info = data == null ? null : data.optJSONArray("info");
+            if (info == null) continue;
+
+            for (int i = 0; i < info.length(); i++) {
+                JSONObject item = info.optJSONObject(i);
+                if (item == null) continue;
+                String hash = item.optString("hash", "");
+                if (hash.isEmpty() || !seenHashes.add(hash)) continue;
+
+                String songTitle = item.optString("songname", "");
+                if (songTitle.isEmpty()) songTitle = item.optString("songname_original", "");
+                String songArtist = item.optString("singername", "");
+                if (songArtist.isEmpty()) {
+                    String filename = item.optString("filename", "");
+                    int dash = filename.indexOf(" - ");
+                    if (dash >= 0) songArtist = filename.substring(0, dash).trim();
+                }
+
+                int ts = titleScore(songTitle, t);
+                int as = artistScore(songArtist, wantedArtist);
+                long songDuration = durationToMs(item.optLong("duration", 0));
+                long score = trackScore(ts, as, songDuration, durationMs, relaxed, wantedArtist.isEmpty());
+                if (score == Long.MIN_VALUE) continue;
+
+                // Keep this list ranked; an irrelevant remix must not hide a later exact result.
+                int insertAt = songScores.size();
+                while (insertAt > 0 && songScores.get(insertAt - 1) < score) insertAt--;
+                songScores.add(insertAt, score);
+                songMatches.add(insertAt, item);
+            }
+        }
+
+        // A few best song hashes are enough; every lyric candidate is independently validated.
+        for (int i = 0; i < Math.min(songMatches.size(), 8); i++) {
+            JSONObject song = songMatches.get(i);
+            String hash = song.optString("hash", "");
+            long songDuration = durationToMs(song.optLong("duration", 0));
+            String keyword = t + (wantedArtist.isEmpty() ? "" : " - " + wantedArtist);
+            String lyricSearchUrl = "https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword="
+                    + enc(keyword) + "&duration=" + Math.max(0, songDuration > 0 ? songDuration : durationMs)
+                    + "&hash=" + enc(hash);
+            Found found = fetchKugouLyricsFromSearch(lyricSearchUrl, t, wantedArtist,
+                    durationMs, relaxed);
+            if (found != null) return found;
+        }
+
+        return null;
+    }
+
+    /** Selects a matching lyric candidate and tries KRC (word timing) before ordinary LRC. */
+    @Nullable
+    private static Found fetchKugouLyricsFromSearch(String searchUrl, String title, String artist,
+                                                     long durationMs, boolean relaxed)
+            throws IOException, JSONException {
+        String searchBody = httpUrl(searchUrl, 20000);
+        if (searchBody == null) return null;
+
+        JSONObject search = parseJsonObject(searchBody);
+        JSONArray candidates = search.optJSONArray("candidates");
+        if (candidates == null || candidates.length() == 0) return null;
+
+        List<JSONObject> ranked = new ArrayList<>();
+        List<Long> scores = new ArrayList<>();
+        for (int i = 0; i < candidates.length(); i++) {
+            JSONObject item = candidates.optJSONObject(i);
+            if (item == null) continue;
+            if (item.optString("id", "").isEmpty() || item.optString("accesskey", "").isEmpty()) continue;
+
+            int ts = titleScore(item.optString("song", ""), title);
+            int as = artistScore(item.optString("singer", ""), artist);
+            long candidateDuration = item.optLong("duration", 0); // Kugou lyric duration is ms.
+            long score = trackScore(ts, as, candidateDuration, durationMs, relaxed, isUnknown(artist));
+            if (score == Long.MIN_VALUE) continue;
+
+            int insertAt = scores.size();
+            while (insertAt > 0 && scores.get(insertAt - 1) < score) insertAt--;
+            scores.add(insertAt, score);
+            ranked.add(insertAt, item);
+        }
+
+        for (JSONObject candidate : ranked) {
+            String id = candidate.optString("id", "");
+            String accessKey = candidate.optString("accesskey", "");
+            long lyricDuration = candidate.optLong("duration", 0);
+
+            // KRC payload is Base64(krc1 + XOR-encrypted zlib stream).
+            String krcBody = downloadKugouPayload(id, accessKey, "krc");
+            if (krcBody != null) {
+                JSONObject payload = parseJsonObject(krcBody);
+                String krc = decodeKugouKrc(payload.optString("content", ""));
+                String enhancedLrc = krcToEnhancedLrc(krc);
+                if (hasTimedLyrics(enhancedLrc)) {
+                    return new Found(enhancedLrc, null, false, lyricDuration);
+                }
+            }
+
+            // LRC is less detailed but is often available even when the KRC candidate is not.
+            String lrcBody = downloadKugouPayload(id, accessKey, "lrc");
+            if (lrcBody != null) {
+                JSONObject payload = parseJsonObject(lrcBody);
+                String lrc = decodeBase64Text(payload.optString("content", ""));
+                lrc = decodeHtmlEntities(lrc);
+                if (hasTimedLyrics(lrc)) return new Found(lrc, null, false, lyricDuration);
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String downloadKugouPayload(String id, String accessKey, String format) {
+        try {
+            String url = "https://lyrics.kugou.com/download?ver=1&client=pc&id=" + enc(id)
+                    + "&accesskey=" + enc(accessKey) + "&fmt=" + enc(format) + "&charset=utf8";
+            String body = httpUrl(url, 20000);
+            if (body == null) return null;
+            JSONObject response = parseJsonObject(body);
+            if (response.optInt("status", 200) != 200 || response.optInt("error_code", 0) != 0
+                    || !notEmpty(response.optString("content", ""))) return null;
+            return body;
+        } catch (IOException | JSONException ignored) {
+            return null;
+        }
+    }
+
+    /** Decodes the Kugou KRC binary payload. The first four bytes are "krc1". */
+    @Nullable
+    private static String decodeKugouKrc(String base64) {
+        if (!notEmpty(base64)) return null;
+        try {
+            byte[] file = Base64.decode(base64, Base64.DEFAULT);
+            if (file.length < 8 || file[0] != 'k' || file[1] != 'r' || file[2] != 'c' || file[3] != '1') {
+                return null;
+            }
+
+            // Kugou applies a fixed 16-byte XOR key, then wraps the result in a zlib stream.
+            final byte[] key = new byte[]{
+                    0x40, 0x47, 0x61, 0x77, 0x5e, 0x32, 0x74, 0x47,
+                    0x51, 0x36, 0x31, 0x2d, (byte) 0xce, (byte) 0xd2, 0x6e, 0x69
+            };
+            byte[] encrypted = new byte[file.length - 4];
+            for (int i = 4; i < file.length; i++) encrypted[i - 4] = (byte) (file[i] ^ key[(i - 4) % key.length]);
+
+            try (InflaterInputStream inflater = new InflaterInputStream(new ByteArrayInputStream(encrypted));
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[4096];
+                int total = 0;
+                int n;
+                while ((n = inflater.read(buffer)) != -1) {
+                    total += n;
+                    if (total > 8 * 1024 * 1024) return null;
+                    output.write(buffer, 0, n);
+                }
+                return output.toString("UTF-8");
+            }
+        } catch (IOException | IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    /** Converts KRC line/word offsets into enhanced-LRC absolute word stamps understood by LrcParser. */
+    @Nullable
+    private static String krcToEnhancedLrc(@Nullable String krc) {
+        if (!notEmpty(krc)) return null;
+        Pattern linePattern = Pattern.compile("^\\[(\\d+),(\\d+)\\](.*)$");
+        Pattern wordPattern = Pattern.compile("<(\\d+),(\\d+)(?:,\\d+)?>");
+        StringBuilder out = new StringBuilder(krc.length());
+
+        for (String raw : krc.split("\\r?\\n")) {
+            String line = raw.trim();
+            if (line.isEmpty()) continue;
+            Matcher lineMatcher = linePattern.matcher(line);
+            if (!lineMatcher.matches()) {
+                // Preserve standard LRC metadata; LrcParser safely ignores other KRC tags.
+                if (line.startsWith("[ti:") || line.startsWith("[ar:")
+                        || line.startsWith("[al:") || line.startsWith("[by:")
+                        || line.startsWith("[offset:")) out.append(line).append('\n');
+                continue;
+            }
+
+            long lineStart = parseLongSafe(lineMatcher.group(1));
+            String content = lineMatcher.group(3);
+            Matcher matcher = wordPattern.matcher(content);
+            List<Long> starts = new ArrayList<>();
+            List<Long> durations = new ArrayList<>();
+            List<String> segments = new ArrayList<>();
+            int previousEnd = 0;
+            int firstMarkerStart = -1;
+
+            while (matcher.find()) {
+                if (firstMarkerStart < 0) {
+                    firstMarkerStart = matcher.start();
+                } else {
+                    segments.add(content.substring(previousEnd, matcher.start()));
+                }
+                starts.add(parseLongSafe(matcher.group(1)));
+                durations.add(parseLongSafe(matcher.group(2)));
+                previousEnd = matcher.end();
+            }
+
+            if (starts.isEmpty()) {
+                if (!content.isEmpty()) out.append('[').append(formatLrcTime(lineStart)).append(']')
+                        .append(content).append('\n');
+                continue;
+            }
+
+            segments.add(content.substring(previousEnd));
+            if (segments.size() == starts.size() && firstMarkerStart > 0) {
+                segments.set(0, content.substring(0, firstMarkerStart) + segments.get(0));
+            }
+
+            StringBuilder enhanced = new StringBuilder();
+            enhanced.append('[').append(formatLrcTime(lineStart)).append(']');
+            boolean wroteWord = false;
+            for (int i = 0; i < starts.size() && i < segments.size(); i++) {
+                String word = segments.get(i);
+                if (word.isEmpty()) continue;
+                long wordStart = lineStart + starts.get(i);
+                long wordEnd = wordStart + Math.max(1, durations.get(i));
+                // Explicit end markers preserve KRC's per-word duration and any pauses between words.
+                enhanced.append('<').append(formatLrcTime(wordStart)).append('>')
+                        .append(word)
+                        .append('<').append(formatLrcTime(wordEnd)).append('>');
+                wroteWord = true;
+            }
+
+            if (wroteWord) out.append(enhanced).append('\n');
+            else if (!content.isEmpty()) out.append('[').append(formatLrcTime(lineStart)).append(']')
+                    .append(content).append('\n');
+        }
+        return out.length() == 0 ? null : out.toString();
+    }
+
+    private static long parseLongSafe(String value) {
+        try { return Long.parseLong(value); }
+        catch (RuntimeException ignored) { return 0; }
+    }
+
+    private static String formatLrcTime(long timeMs) {
+        long safe = Math.max(0, timeMs);
+        long minutes = safe / 60000L;
+        long seconds = (safe / 1000L) % 60L;
+        long milliseconds = safe % 1000L;
+        return String.format(Locale.US, "%02d:%02d.%03d", minutes, seconds, milliseconds);
+    }
+
+    private static long durationToMs(long value) {
+        if (value <= 0) return 0;
+        return value < 10000 ? value * 1000L : value;
+    }
+
+    /** QQ Music search and its public LRC endpoint. */
+    @Nullable
+    private static Found fetchQqMusic(String title, String artist, long durationMs, boolean relaxed)
+            throws IOException, JSONException {
+        String t = title == null ? "" : title.trim();
+        if (t.isEmpty()) return null;
+
+        String[] queries = isUnknown(artist)
+                ? new String[]{t}
+                : new String[]{t + " " + artist.trim(), artist.trim() + " " + t};
+        Set<String> seen = new HashSet<>();
+        JSONObject best = null;
+        long bestScore = Long.MIN_VALUE;
+
+        for (String query : queries) {
+            // This is the same public search route and parameter shape tested by lyrics_probe.py.
+            String searchUrl = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=" + enc(query)
+                    + "&format=json&n=20&p=1";
+            String searchBody = httpUrl(searchUrl, 20000, "https://y.qq.com/");
+            if (searchBody == null) continue;
+
+            JSONObject search = parseJsonObject(searchBody);
+            JSONObject data = search.optJSONObject("data");
+            JSONObject songData = data == null ? null : data.optJSONObject("song");
+            JSONArray songs = songData == null ? null : songData.optJSONArray("list");
+            if (songs == null) continue;
+
+            for (int i = 0; i < songs.length(); i++) {
+                JSONObject item = songs.optJSONObject(i);
+                if (item == null) continue;
+                String mid = item.optString("songmid", "");
+                if (mid.isEmpty() || !seen.add(mid)) continue;
+
+                int ts = titleScore(item.optString("songname", ""), t);
+                int as = qqArtistScore(item.optJSONArray("singer"), artist);
+                long candidateDuration = item.optLong("interval", 0) * 1000L;
+                long score = trackScore(ts, as, candidateDuration, durationMs, relaxed, isUnknown(artist));
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = item;
+                }
+            }
+        }
+        if (best == null) return null;
+
+        String lyricUrl = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid="
+                + enc(best.optString("songmid", "")) + "&format=json&nobase64=1";
+        String lyricBody = httpUrl(lyricUrl, 20000, "https://y.qq.com/");
+        if (lyricBody == null) return null;
+
+        JSONObject response = parseJsonObject(lyricBody);
+        if (response.optInt("retcode", 0) != 0 || response.optInt("code", 0) != 0
+                || response.optInt("subcode", 0) != 0) return null;
+        String lrc = decodeBase64Text(response.optString("lyric", ""));
+        lrc = decodeHtmlEntities(lrc);
+        if (!hasTimedLyrics(lrc)) return null;
+        return new Found(lrc, null, false, best.optLong("interval", 0) * 1000L);
+    }
+
+    /** NetEase Cloud Music search and LRC endpoint. */
+    @Nullable
+    private static Found fetchNetease(String title, String artist, long durationMs, boolean relaxed)
+            throws IOException, JSONException {
+        String t = title == null ? "" : title.trim();
+        if (t.isEmpty()) return null;
+
+        String[] queries = isUnknown(artist)
+                ? new String[]{t}
+                : new String[]{t + " " + artist.trim(), artist.trim() + " " + t};
+        Set<Long> seen = new HashSet<>();
+        JSONObject best = null;
+        long bestScore = Long.MIN_VALUE;
+
+        for (String query : queries) {
+            // Match the known-working endpoint used by the supplied probe.
+            String searchUrl = "https://music.163.com/api/search/get?s=" + enc(query)
+                    + "&type=1&limit=30&offset=0";
+            String searchBody = httpUrl(searchUrl, 20000, "https://music.163.com/");
+            if (searchBody == null) continue;
+
+            JSONObject search = parseJsonObject(searchBody);
+            JSONObject result = search.optJSONObject("result");
+            JSONArray songs = result == null ? null : result.optJSONArray("songs");
+            if (songs == null) continue;
+
+            for (int i = 0; i < songs.length(); i++) {
+                JSONObject item = songs.optJSONObject(i);
+                if (item == null) continue;
+                long songId = item.optLong("id", 0);
+                if (songId <= 0 || !seen.add(songId)) continue;
+
+                int ts = titleScore(item.optString("name", ""), t);
+                int as = neteaseArtistScore(item.optJSONArray("artists"), artist);
+                long candidateDuration = item.optLong("duration", 0);
+                long score = trackScore(ts, as, candidateDuration, durationMs, relaxed, isUnknown(artist));
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = item;
+                }
+            }
+        }
+        if (best == null) return null;
+
+        String lyricUrl = "https://music.163.com/api/song/lyric?id="
+                + best.optLong("id") + "&lv=1&kv=1&tv=-1&yv=1";
+        String lyricBody = httpUrl(lyricUrl, 20000, "https://music.163.com/");
+        if (lyricBody == null) return null;
+        JSONObject response = parseJsonObject(lyricBody);
+        JSONObject lrcObject = response.optJSONObject("lrc");
+        String lrc = lrcObject == null ? "" : lrcObject.optString("lyric", "");
+        lrc = decodeHtmlEntities(lrc);
+        if (!hasTimedLyrics(lrc)) return null;
+        return new Found(lrc, null, false, best.optLong("duration", 0));
+    }
+
+    private static int titleScore(String actual, String wanted) {
+        String a = titleForMatching(actual);
+        String w = titleForMatching(wanted);
+        if (a.isEmpty() || w.isEmpty()) return -1;
+        // Do not treat "Faded (Remix)" or "Numb Live" as an exact match for the original.
+        return a.equals(w) ? 5 : -1;
+    }
+
+    private static String titleForMatching(@Nullable String value) {
+        if (value == null) return "";
+        String title = value.trim();
+        title = title.replaceFirst("(?i)\\s*[\\[(]?\\s*(feat\\.?|ft\\.?|featuring)\\s+.*?[\\])]?$", "");
+        title = title.replaceFirst("(?i)\\s*[\\[(]\\s*(official\\s+(audio|video)|lyrics?(\\s+video)?|visualizer|lyric video)\\s*[\\])]\\s*$", "");
+        return norm(title);
+    }
+
+    private static int artistScore(String actual, String wanted) {
+        String a = norm(actual);
+        String w = norm(wanted);
+        if (w.isEmpty()) return 0;
+        if (a.isEmpty()) return -1;
+        if (a.equals(w)) return 4;
+
+        String[] actualParts = ARTIST_SPLIT.split(actual == null ? "" : actual);
+        String[] wantedParts = ARTIST_SPLIT.split(wanted == null ? "" : wanted);
+        int wantedCount = 0;
+        int matched = 0;
+        for (String wantedPart : wantedParts) {
+            String wp = norm(wantedPart);
+            if (wp.isEmpty()) continue;
+            wantedCount++;
+            for (String actualPart : actualParts) {
+                if (wp.equals(norm(actualPart))) {
+                    matched++;
+                    break;
+                }
+            }
+        }
+        if (wantedCount > 0 && matched == wantedCount) return 4;
+        return matched > 0 ? 2 : -1;
+    }
+
+    private static long trackScore(int titleScore, int artistScore, long candidateDuration,
+                                   long wantedDuration, boolean relaxed, boolean artistUnknown) {
+        if (titleScore < 0 || (!artistUnknown && artistScore < 0)) return Long.MIN_VALUE;
+        long score = titleScore * 100000L + (artistUnknown ? 0 : Math.max(artistScore, 0) * 20000L);
+        if (candidateDuration > 0 && wantedDuration > 0) {
+            long diff = Math.abs(candidateDuration - wantedDuration);
+            if (!relaxed && diff > MAX_DURATION_DIFF_MS) return Long.MIN_VALUE;
+            score -= Math.min(diff, 300000L) * (relaxed ? 1L : 2L);
+        } else {
+            score -= 1000L;
+        }
+        return score;
+    }
+
+    private static int qqArtistScore(@Nullable JSONArray artists, String wanted) {
+        if (isUnknown(wanted)) return 0;
+        if (artists == null || artists.length() == 0) return -1;
+        StringBuilder names = new StringBuilder();
+        for (int i = 0; i < artists.length(); i++) {
+            JSONObject artist = artists.optJSONObject(i);
+            if (artist == null) continue;
+            if (names.length() > 0) names.append(" & ");
+            names.append(artist.optString("name", ""));
+        }
+        return artistScore(names.toString(), wanted);
+    }
+
+    private static int neteaseArtistScore(@Nullable JSONArray artists, String wanted) {
+        if (wanted.isEmpty()) return 0;
+        if (artists == null || artists.length() == 0) return -1;
+        StringBuilder names = new StringBuilder();
+        for (int i = 0; i < artists.length(); i++) {
+            JSONObject artist = artists.optJSONObject(i);
+            if (artist == null) continue;
+            if (names.length() > 0) names.append(" & ");
+            names.append(artist.optString("name", ""));
+        }
+        return artistScore(names.toString(), wanted);
+    }
+
+    private static boolean hasTimedLyrics(@Nullable String lrc) {
+        if (!notEmpty(lrc)) return false;
+        return STAMP.matcher(lrc).find();
+    }
+
+    private static JSONObject parseJsonObject(String body) throws JSONException {
+        String value = body == null ? "" : body.trim();
+        int start = value.indexOf('{');
+        int end = value.lastIndexOf('}');
+        if (start >= 0 && end > start) value = value.substring(start, end + 1);
+        return new JSONObject(value);
+    }
+
+    private static String decodeBase64Text(String value) {
+        if (!notEmpty(value)) return "";
+        String text = value.trim();
+        if (text.startsWith("[") || text.startsWith("<?xml") || text.startsWith("<Qrc")) return text;
+        try {
+            byte[] decoded = Base64.decode(text, Base64.DEFAULT);
+            String result = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
+            return result.indexOf('\u0000') >= 0 ? text : result;
+        } catch (IllegalArgumentException e) {
+            return text;
+        }
+    }
+
+    private static String decodeHtmlEntities(String value) {
+        if (value == null || value.indexOf('&') < 0) return value == null ? "" : value;
+        String decoded = value.replace("&amp;", "&").replace("&quot;", "\"")
+                .replace("&apos;", "'").replace("&#39;", "'")
+                .replace("&lt;", "<").replace("&gt;", ">");
+        Matcher m = Pattern.compile("&#(x[0-9a-fA-F]+|[0-9]+);").matcher(decoded);
+        StringBuffer out = new StringBuffer();
+        while (m.find()) {
+            try {
+                String code = m.group(1);
+                int cp = code.charAt(0) == 'x' || code.charAt(0) == 'X'
+                        ? Integer.parseInt(code.substring(1), 16) : Integer.parseInt(code);
+                m.appendReplacement(out, Matcher.quoteReplacement(new String(Character.toChars(cp))));
+            } catch (RuntimeException e) {
+                m.appendReplacement(out, Matcher.quoteReplacement(m.group()));
+            }
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
     /** Letters and digits only, lower case, "(Slowed)"-style tags kept (they are part of the title). */
     private static String norm(@Nullable String s) {
         if (s == null) return "";
@@ -539,14 +1123,27 @@ public final class LyricsRepo {
 
     @Nullable
     private static String httpUrl(String url, int readTimeoutMs) throws IOException {
+        return httpUrl(url, readTimeoutMs, null);
+    }
+
+    @Nullable
+    private static String httpUrl(String url, int readTimeoutMs, @Nullable String referer) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         try {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(readTimeoutMs);
-            conn.setRequestProperty("User-Agent", USER_AGENT);
-            conn.setRequestProperty("Lrclib-Client", USER_AGENT);
-            conn.setRequestProperty("Accept", "application/json");
+            boolean lrclibRequest = url.startsWith(BASE);
+            if (lrclibRequest) {
+                conn.setRequestProperty("User-Agent", USER_AGENT);
+                conn.setRequestProperty("Lrclib-Client", USER_AGENT);
+                conn.setRequestProperty("Accept", "application/json");
+            } else {
+                // The other public endpoints were tested with a standard Android browser UA.
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36");
+                conn.setRequestProperty("Accept", "*/*");
+            }
+            if (referer != null) conn.setRequestProperty("Referer", referer);
             int code = conn.getResponseCode();
             if (code == 404) return null;
             if (code != 200) throw new IOException("HTTP " + code);

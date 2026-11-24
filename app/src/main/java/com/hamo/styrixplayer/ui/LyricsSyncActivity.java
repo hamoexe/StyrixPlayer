@@ -1002,26 +1002,26 @@ public class LyricsSyncActivity extends BaseActivity {
         public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             LinearLayout card = new LinearLayout(parent.getContext());
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(dp(14), dp(11), dp(14), dp(12));
+            card.setPadding(dp(16), dp(12), dp(16), dp(13));
             RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(7);
+            params.bottomMargin = dp(4);
             card.setLayoutParams(params);
 
             TextView label = new TextView(parent.getContext());
-            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
             label.setTypeface(null, Typeface.BOLD);
             label.setLetterSpacing(0.035f);
             card.addView(label, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
             TextView body = new TextView(parent.getContext());
-            body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+            body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
             body.setGravity(Gravity.START);
             body.setLineSpacing(dp(2), 1f);
             LinearLayout.LayoutParams bodyParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            bodyParams.topMargin = dp(4);
+            bodyParams.topMargin = dp(3);
             card.addView(body, bodyParams);
             return new VH(card, label, body);
         }
@@ -1041,10 +1041,12 @@ public class LyricsSyncActivity extends BaseActivity {
             int variant = MaterialColors.getColor(holder.card, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.LTGRAY);
             int surface = MaterialColors.getColor(holder.card, com.google.android.material.R.attr.colorSurfaceContainerLow, 0xFF25252B);
 
-            int background = playingLine ? primaryContainer : nextWord ? secondaryContainer : surface;
-            holder.card.setBackground(roundRect(background, dp(16)));
+            // only the line being played / tapped gets a card; the rest sit flat on the page
+            int background = playingLine ? primaryContainer : nextWord ? secondaryContainer : Color.TRANSPARENT;
+            holder.card.setBackground(roundRect(background, dp(22)));
             holder.label.setTextColor(playingLine || nextWord ? onPrimary : variant);
-            holder.body.setTextColor(onSurface);
+            holder.body.setTextColor(playingLine || nextWord ? onSurface
+                    : (onSurface & 0x00FFFFFF) | (row.time >= 0 || row.firstWordTime() >= 0 ? 0xE6000000 : 0x99000000));
 
             long rowTime = row.time >= 0 ? row.time : row.firstWordTime();
             String status = rowTime >= 0 ? stamp(rowTime) : "--:--.--";

@@ -346,7 +346,22 @@ public class PlaybackService extends MediaSessionService {
                     return com.hamo.styrixplayer.yt.YtLocal.localUri(spec.uri.getSchemeSpecificPart()) == null;
                 });
 
-        player = new ExoPlayer.Builder(this)
+        // Same audio output as the default one, plus a listener that feeds the visualizer.
+        androidx.media3.exoplayer.DefaultRenderersFactory renderers =
+                new androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+                    @Override
+                    protected androidx.media3.exoplayer.audio.AudioSink buildAudioSink(
+                            android.content.Context context, boolean enableFloatOutput,
+                            boolean enableAudioTrackPlaybackParams) {
+                        return new androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                                .setEnableFloatOutput(enableFloatOutput)
+                                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                                .setAudioProcessors(new androidx.media3.common.audio.AudioProcessor[]{
+                                        new androidx.media3.exoplayer.audio.TeeAudioProcessor(SpectrumTap.get())})
+                                .build();
+                    }
+                };
+        player = new ExoPlayer.Builder(this, renderers)
                 .setMediaSourceFactory(new DefaultMediaSourceFactory(upstream))
                 .setAudioAttributes(attrs, /* handleAudioFocus= */ true)
                 .setHandleAudioBecomingNoisy(true) // pause on headphone unplug

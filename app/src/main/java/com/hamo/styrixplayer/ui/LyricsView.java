@@ -74,6 +74,13 @@ public class LyricsView extends ViewGroup {
 
     private static final float UNSUNG_ALPHA = 0.40f;
     private static final int ALL = Integer.MAX_VALUE, NONE = -1;
+    private static final float WORD_GROW = 0.06f;   // the word being sung swells by up to 6%
+    private static final float SYL_GROW = 0.035f;   // ...and the part (syllable) inside it by 3.5% more
+
+    private static float smooth(float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return t * t * (3f - 2f * t);
+    }
 
     /**
      * One lyric line. Draws its text in a single pass, with a word-synced karaoke gradient
@@ -85,6 +92,11 @@ public class LyricsView extends ViewGroup {
         private final int padV;
         private final float edge;
         private final int[] sStart, sEnd;       // per word, trailing spaces trimmed (null = no word sync)
+        private final int[] gFirst, gLast;      // per syllable: first / last syllable of the whole word it belongs to
+        private final float[] wGrow, sGrow;      // swell 0..1 per word (at its first syllable) and per syllable
+        private int tgtSyl = -1;                 // syllable being sung now, -1 = none
+        private long growNs;
+        private boolean growBusy;
         private StaticLayout layout;
         private int layoutW = -1;
         private int baseColor = Color.WHITE;
@@ -105,6 +117,10 @@ public class LyricsView extends ViewGroup {
             if (syl != null && syl.length > 0 && text.length() > 0) {
                 sStart = new int[syl.length];
                 sEnd = new int[syl.length];
+                gFirst = new int[syl.length];
+                gLast = new int[syl.length];
+                wGrow = new float[syl.length];
+                sGrow = new float[syl.length];
                 for (int k = 0; k < syl.length; k++) {
                     int s = Math.max(0, Math.min(text.length() - 1, syl[k].start));
                     int e = Math.max(s, Math.min(text.length(), syl[k].end));
@@ -112,10 +128,30 @@ public class LyricsView extends ViewGroup {
                     sStart[k] = s;
                     sEnd[k] = Math.max(s + 1, e);
                 }
+                int g0 = 0;
+                for (int k = 0; k < syl.length; k++) {
+                    if (k > 0 && wordBreakBefore(text, sStart[k])) g0 = k;
+                    gFirst[k] = g0;
+                }
+                int g1 = syl.length - 1;
+                for (int k = syl.length - 1; k >= 0; k--) {
+                    if (k < syl.length - 1 && wordBreakBefore(text, sStart[k + 1])) g1 = k;
+                    gLast[k] = g1;
+                }
             } else {
                 sStart = null;
                 sEnd = null;
+                gFirst = null;
+                gLast = null;
+                wGrow = null;
+                sGrow = null;
             }
+        }
+
+        /** True when a new whole word begins at character {@code at} (a space sits right before it or at it). */
+        static boolean wordBreakBefore(String t, int at) {
+            return at > 0 && at < t.length()
+                    && (Character.isWhitespace(t.charAt(at - 1)) || Character.isWhitespace(t.charAt(at)));
         }
 
         boolean wordSynced() {
@@ -131,9 +167,11 @@ public class LyricsView extends ViewGroup {
         void setKaraoke(int a, float p, float u) {
             if (a == active && Math.abs(p - prog) < 0.0005f
                     && Math.abs(u - unsung) < 0.004f) return;
+            // (a/p changed or the brightness moved: recompute below)
             active = a;
             prog = p;
             unsung = u;
+            tgtSyl = (gFirst != null && a >= 0 && a < gFirst.length) ? a : -1;
             invalidate();
         }
 
@@ -164,7 +202,10 @@ public class LyricsView extends ViewGroup {
             if (layout == null) return;
             canvas.save();
             canvas.translate(0, padV);
-            if (sStart == null || active == ALL) {
+            stepGrow();
+            if (sStart == null) {
+                solid(canvas, 1f);
+            } else if (active == ALL) {
                 solid(canvas, 1f);
             } else if (active == NONE) {
                 solid(canvas, unsung);
@@ -172,13 +213,122 @@ public class LyricsView extends ViewGroup {
                 partial(canvas);
             }
             canvas.restore();
+            if (growBusy) postInvalidateOnAnimation();
         }
 
 
         private void solid(Canvas canvas, float a) {
             paint.setShader(null);
             paint.setColor(withAlpha(baseColor, a));
+            swell(canvas, layoutW, 0, layout.getHeight());
+        }
+
+        private static float approach(float v, float t, float dt) {
+            float tau = t > v ? 0.10f : 0.18f;          // swell up quickly, settle back slowly
+            v += (t - v) * (1f - (float) Math.exp(-dt / tau));
+            return Math.abs(t - v) < 0.004f ? t : v;
+        }
+
+        /** Eases every word / syllable swell toward "on" (being sung) or "off". Smooth, not linear. */
+        private void stepGrow() {
+            growBusy = false;
+            if (gFirst == null) return;
+            long now = System.nanoTime();
+            float dt = growNs == 0 ? 0f : Math.min(0.05f, (now - growNs) / 1e9f);
+            growNs = now;
+            final int n = gFirst.length;
+            final int tw = tgtSyl >= 0 ? gFirst[tgtSyl] : -1;
+            for (int k = 0; k < n; k++) {
+                if (gFirst[k] == k) {
+                    float t = k == tw ? 1f : 0f;
+                    wGrow[k] = approach(wGrow[k], t, dt);
+                    if (wGrow[k] != t) growBusy = true;
+                }
+                float ts = (k == tgtSyl && gLast[k] > gFirst[k]) ? 1f : 0f;
+                sGrow[k] = approach(sGrow[k], ts, dt);
+                if (sGrow[k] != ts) growBusy = true;
+            }
+            if (tgtSyl < 0) { growNs = growBusy ? growNs : 0; }
+        }
+
+        private static float ease(float v) { return v * v * (3f - 2f * v); }
+
+        /** {left, right, rowTop, rowBottom, baseline} of chars [s,e) when they sit on one row, else null. */
+        private float[] box(int s, int e) {
+            final int j = layout.getLineForOffset(s);
+            if (layout.getLineForOffset(Math.max(s, e - 1)) != j) return null;
+            final boolean rtl = layout.getParagraphDirection(j) == Layout.DIR_RIGHT_TO_LEFT;
+            float x0 = layout.getPrimaryHorizontal(s);
+            float x1 = (e <= text.length() && layout.getLineForOffset(e) == j)
+                    ? layout.getPrimaryHorizontal(e) : (rtl ? layout.getLineLeft(j) : layout.getLineRight(j));
+            float l = Math.min(x0, x1), r = Math.max(x0, x1);
+            if (r - l < 1f) return null;
+            return new float[]{l, r, layout.getLineTop(j), layout.getLineBottom(j), layout.getLineBaseline(j)};
+        }
+
+        /**
+         * Draws the text (paint already set) inside the rows [clipTop, clipBottom]. Words that are
+         * being sung are drawn a little larger: the whole word swells, and the syllable being sung
+         * swells a bit more inside it. Scaling is about the word's centre on its baseline.
+         */
+        private void swell(Canvas canvas, int w, int clipTop, int clipBottom) {
+            int words = 0;
+            if (gFirst != null) {
+                for (int k = 0; k < gFirst.length; k++) if (gFirst[k] == k && wGrow[k] > 0.003f) words++;
+            }
+            if (words == 0) {
+                canvas.save();
+                canvas.clipRect(0, clipTop, w, clipBottom);
+                layout.draw(canvas);
+                canvas.restore();
+                return;
+            }
+            final float[][] wb = new float[gFirst.length][];
+            canvas.save();
+            canvas.clipRect(0, clipTop, w, clipBottom);
+            for (int k = 0; k < gFirst.length; k++) {
+                if (gFirst[k] != k || wGrow[k] <= 0.003f) continue;
+                float[] b = box(sStart[k], sEnd[gLast[k]]);
+                if (b == null || b[2] < clipTop || b[3] > clipBottom) continue;
+                wb[k] = b;
+                canvas.clipOutRect(b[0], b[2], b[1], b[3]);
+            }
             layout.draw(canvas);
+            canvas.restore();
+            for (int k = 0; k < gFirst.length; k++) {
+                final float[] b = wb[k];
+                if (b == null) continue;
+                final float gw = 1f + WORD_GROW * ease(wGrow[k]);
+                final float cx = (b[0] + b[1]) / 2f;
+                // keep the swollen word inside the line: the first / last word of a row would
+                // otherwise grow past the view edge and get its first or last letter cut off
+                final float lo = b[0] - (cx - b[0]) * (gw - 1f), hi = b[1] + (b[1] - cx) * (gw - 1f);
+                final float dx = lo < 0f ? -lo : (hi > w ? w - hi : 0f);
+                canvas.save();
+                canvas.translate(dx, 0f);
+                canvas.scale(gw, gw, cx, b[4]);
+                canvas.clipRect(b[0], b[2], b[1], b[3]);
+                for (int q = k; q <= gLast[k]; q++) {
+                    if (sGrow[q] <= 0.003f) continue;
+                    float[] sb = box(sStart[q], sEnd[q]);
+                    if (sb != null) canvas.clipOutRect(sb[0], sb[2], sb[1], sb[3]);
+                }
+                layout.draw(canvas);
+                canvas.restore();
+                for (int q = k; q <= gLast[k]; q++) {
+                    if (sGrow[q] <= 0.003f) continue;
+                    float[] sb = box(sStart[q], sEnd[q]);
+                    if (sb == null) continue;
+                    final float gs = 1f + SYL_GROW * ease(sGrow[q]);
+                    canvas.save();
+                    canvas.translate(dx, 0f);
+                    canvas.scale(gw, gw, cx, b[4]);
+                    canvas.scale(gs, gs, (sb[0] + sb[1]) / 2f, sb[4]);
+                    canvas.clipRect(sb[0], sb[2], sb[1], sb[3]);
+                    layout.draw(canvas);
+                    canvas.restore();
+                }
+            }
         }
 
         private void partial(Canvas canvas) {
@@ -236,10 +386,7 @@ public class LyricsView extends ViewGroup {
             paint.setColor(Color.BLACK);
             paint.setAlpha(255);
             paint.setShader(grad);
-            canvas.save();
-            canvas.clipRect(0, top, w, bottom);
-            layout.draw(canvas);
-            canvas.restore();
+            swell(canvas, w, top, bottom);
             paint.setShader(null);
             paint.setAlpha(255);
 
@@ -263,6 +410,7 @@ public class LyricsView extends ViewGroup {
     private final Object[] blurCache = new Object[40];   // RenderEffect (typed Object: API 31+)
 
     private List<LrcParser.Line> lines = new ArrayList<>();
+    private long[][] eff = new long[0][];    // per line: smoothed {start, duration} per syllable (null = as given)
     private boolean[] rtl = new boolean[0];
     private int[] tops = new int[0];
     private int[] blurLevel = new int[0];
@@ -450,6 +598,7 @@ public class LyricsView extends ViewGroup {
         curS = new float[0];
         curB = new float[0];
         curU = new float[0];
+        eff = new long[0][];
         karaokeIdx = -1;
         clockValid = false;
     }
@@ -466,6 +615,7 @@ public class LyricsView extends ViewGroup {
         curS = new float[n];
         curB = new float[n];
         curU = new float[n];
+        eff = new long[n][];
         final float px = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, TEXT_SP,
                 getResources().getDisplayMetrics());
         for (int i = 0; i < n; i++) {
@@ -473,11 +623,68 @@ public class LyricsView extends ViewGroup {
             LineView tv = new LineView(getContext(), text.isEmpty() ? "♪" : text,
                     text.isEmpty() ? null : lines.get(i).syl, px, dp(9), dp(16));
             tv.setBaseColor(textColor);
+            if (!text.isEmpty()) eff[i] = smoothTimes(text, lines.get(i).syl);
             rtl[i] = startsRtl(text);
             curU[i] = 1f;
             addView(tv);
             views.add(tv);
         }
+    }
+
+    /**
+     * Makes the word sweep look right on real-world word timings:
+     * 1. Parts of a word that are only a few milliseconds long (Flow 25 ms + ers 2.9 s) are spread out
+     *    half by their given length and half by their letter count, so the sweep doesn't zip.
+     * 2. A held word (a 3 second "er") no longer crawls across its letters the whole time: it
+     *    sweeps in a time that fits its length, then waits, and the next word carries on from there.
+     * 3. A last word with a tiny duration still gets a short, visible sweep.
+     * Returns {start0, dur0, start1, dur1, ...}, or null when nothing needs changing.
+     */
+    @Nullable
+    private static long[] smoothTimes(String text, LrcParser.Syl[] syl) {
+        if (syl == null || syl.length < 1) return null;
+        final int n = syl.length;
+        long[] out = new long[n * 2];
+        int[] len = new int[n];
+        for (int k = 0; k < n; k++) {
+            out[2 * k] = syl[k].timeMs;
+            out[2 * k + 1] = syl[k].durMs;
+            int a = Math.max(0, syl[k].start), b = Math.min(text.length(), syl[k].end);
+            while (b > a + 1 && Character.isWhitespace(text.charAt(b - 1))) b--;
+            len[k] = Math.max(1, b - a);
+        }
+        boolean changed = false;
+        int g0 = 0;
+        for (int k = 1; k <= n; k++) {
+            if (k < n && !LineView.wordBreakBefore(text, Math.max(0, Math.min(text.length() - 1, syl[k].start)))) continue;
+            if (k - g0 > 1) {
+                long t0 = syl[g0].timeMs, t1 = syl[k - 1].timeMs + syl[k - 1].durMs;
+                long total = Math.max(1, t1 - t0);
+                int letters = 0;
+                boolean tiny = false;
+                for (int q = g0; q < k; q++) {
+                    letters += len[q];
+                    if (syl[q].durMs < 120 || syl[q].durMs < total * 0.12) tiny = true;
+                }
+                if (tiny) {
+                    changed = true;
+                    double cum = 0;
+                    for (int q = g0; q < k; q++) {
+                        double w = 0.5 * syl[q].durMs / total + 0.5 * len[q] / (double) letters;
+                        out[2 * q] = t0 + Math.round(cum * total);
+                        out[2 * q + 1] = Math.max(1, Math.round(w * total));
+                        cum += w;
+                    }
+                }
+            }
+            g0 = k;
+        }
+        for (int q = 0; q < n; q++) {
+            long cap = Math.max(450L, 260L * len[q]);
+            if (out[2 * q + 1] > cap) { out[2 * q + 1] = cap; changed = true; }
+            if (q == n - 1 && out[2 * q + 1] < 300L) { out[2 * q + 1] = 300L; changed = true; }
+        }
+        return changed ? out : null;
     }
 
     private static boolean startsRtl(String s) {
@@ -817,13 +1024,17 @@ public class LyricsView extends ViewGroup {
                 if (cur) {
                     LrcParser.Syl[] syl = lines.get(i).syl;
                     double kpos = pos - offsetMs;
+                    final long[] et = i < eff.length ? eff[i] : null;
                     a = NONE;
                     for (int w = 0; w < syl.length; w++) {
-                        if (kpos >= syl[w].timeMs) a = w;
+                        long st = et != null ? et[2 * w] : syl[w].timeMs;
+                        if (kpos >= st) a = w;
                         else break;
                     }
                     if (a >= 0) {
-                        p = (float) ((kpos - syl[a].timeMs) / Math.max(1, syl[a].durMs));
+                        long st = et != null ? et[2 * a] : syl[a].timeMs;
+                        long du = et != null ? et[2 * a + 1] : syl[a].durMs;
+                        p = (float) ((kpos - st) / Math.max(1, du));
                         p = Math.max(0f, Math.min(1f, p));
                         if (a == syl.length - 1 && p >= 1f) a = ALL;
                     }

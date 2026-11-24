@@ -6,8 +6,8 @@ package com.hamo.styrixplayer;
  * Keep build.gradle's versionName / versionCode in step if you want the APK to match.
  */
 public final class AppInfo {
-    public static final String VERSION_NAME = "1.22.2";
-    public static final int VERSION_CODE = 79;
+    public static final String VERSION_NAME = "1.23.7";
+public static final int VERSION_CODE = 87;
 
     private AppInfo() {}
 }

@@ -16,6 +16,7 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 import com.hamo.styrixplayer.I18n;
 import com.hamo.styrixplayer.R;
 import com.hamo.styrixplayer.data.Prefs;
+import com.hamo.styrixplayer.playback.SpectrumTap;
 import com.hamo.styrixplayer.yt.YtAuth;
 
 public class SettingsActivity extends BaseActivity {
@@ -123,6 +124,12 @@ public class SettingsActivity extends BaseActivity {
         addSwitch("Most played part",
                 "Shows a small graph above the seek bar of the parts of a song you replay most.",
                 Prefs.HEATMAP, true);
+        addSwitch("Audio visualizer",
+                "Bars above the seek bar that dance to the music.", Prefs.VISUALIZER, false);
+        final TextView vizValue = addValueRow("Visualizer style",
+                "Bars or line, how strongly it reacts, and which frequencies it shows",
+                I18n.t(Prefs.getInt(this, Prefs.VIZ_STYLE, 0) == 1 ? "Line" : "Bars"));
+        ((View) vizValue.getParent()).setOnClickListener(v -> tweakVisualizer(vizValue));
         addSwitch("Color mesh background",
                 "The player background takes a different color in every corner of the cover. Off: blurred cover.",
                 Prefs.BG_MESH, true);
@@ -240,6 +247,118 @@ public class SettingsActivity extends BaseActivity {
 
     private static String hex(int color) {
         return String.format("#%06X", color & 0xFFFFFF);
+    }
+
+    private static String hz(float v) {
+        // centre of the band at that position (bands are log-spaced from LOW_HZ to HIGH_HZ)
+        double pos = (v / 100.0 * (SpectrumTap.BANDS - 1) + 0.5) / SpectrumTap.BANDS;
+        double f = SpectrumTap.LOW_HZ * Math.pow(SpectrumTap.HIGH_HZ / SpectrumTap.LOW_HZ, pos);
+        return f >= 1000 ? String.format(java.util.Locale.US, "%.1f kHz", f / 1000.0)
+                : Math.round(f) + " Hz";
+    }
+
+    private TextView vizLabel(String text, float d) {
+        TextView t = new TextView(this);
+        t.setText(I18n.t(text));
+        t.setTextSize(14);
+        t.setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface, 0));
+        t.setPadding(0, (int) (14 * d), 0, 0);
+        return t;
+    }
+
+    /** Live preview plus the visualizer tweaks: style, sensitivity, smoothness, frequency range. */
+    private void tweakVisualizer(final TextView valueView) {
+        final float d = getResources().getDisplayMetrics().density;
+        final LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding((int) (24 * d), (int) (8 * d), (int) (24 * d), (int) (4 * d));
+
+        final VisualizerView preview = new VisualizerView(this);
+        col.addView(preview, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (int) (72 * d)));
+        TextView hint = new TextView(this);
+        hint.setText(I18n.t("Play a song to see the preview."));
+        hint.setTextSize(12);
+        hint.setAlpha(0.7f);
+        hint.setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface, 0));
+        col.addView(hint);
+
+        col.addView(vizLabel("Style", d));
+        final com.google.android.material.button.MaterialButtonToggleGroup group =
+                new com.google.android.material.button.MaterialButtonToggleGroup(this);
+        group.setSingleSelection(true);
+        group.setSelectionRequired(true);
+        final String[] styles = {"Bars", "Line"};
+        for (int i = 0; i < 2; i++) {
+            com.google.android.material.button.MaterialButton b = new com.google.android.material.button.MaterialButton(
+                    this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
+            b.setId(View.generateViewId());
+            b.setText(I18n.t(styles[i]));
+            group.addView(b, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            if (i == Prefs.getInt(this, Prefs.VIZ_STYLE, 0)) group.check(b.getId());
+        }
+        group.addOnButtonCheckedListener((g, id, checked) -> {
+            if (!checked) return;
+            int idx = g.indexOfChild(g.findViewById(id));
+            Prefs.setInt(this, Prefs.VIZ_STYLE, idx);
+            valueView.setText(I18n.t(styles[idx]));
+            preview.reload();
+        });
+        col.addView(group);
+
+        col.addView(vizLabel("Sensitivity", d));
+        final com.google.android.material.slider.Slider gain = new com.google.android.material.slider.Slider(this);
+        gain.setValueFrom(0); gain.setValueTo(100); gain.setStepSize(1);
+        gain.setValue(Prefs.getInt(this, Prefs.VIZ_GAIN, 35));
+        gain.addOnChangeListener((s, v, user) -> {
+            Prefs.setInt(this, Prefs.VIZ_GAIN, (int) v);
+            preview.reload();
+        });
+        col.addView(gain);
+
+        col.addView(vizLabel("Smoothness", d));
+        final com.google.android.material.slider.Slider smooth = new com.google.android.material.slider.Slider(this);
+        smooth.setValueFrom(0); smooth.setValueTo(100); smooth.setStepSize(1);
+        smooth.setValue(Prefs.getInt(this, Prefs.VIZ_SMOOTH, 50));
+        smooth.addOnChangeListener((s, v, user) -> {
+            Prefs.setInt(this, Prefs.VIZ_SMOOTH, (int) v);
+            preview.reload();
+        });
+        col.addView(smooth);
+
+        col.addView(vizLabel("Frequency range", d));
+        TextView rangeHint = new TextView(this);
+        rangeHint.setText(I18n.t("Move the ends to hide the lows or highs. Voices sit around 300 Hz to 3 kHz."));
+        rangeHint.setTextSize(12);
+        rangeHint.setAlpha(0.7f);
+        rangeHint.setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface, 0));
+        col.addView(rangeHint);
+        final com.google.android.material.slider.RangeSlider freq = new com.google.android.material.slider.RangeSlider(this);
+        freq.setValueFrom(0); freq.setValueTo(100); freq.setStepSize(1);
+        freq.setMinSeparationValue(10);
+        freq.setValues((float) Prefs.getInt(this, Prefs.VIZ_LO, 0), (float) Prefs.getInt(this, Prefs.VIZ_HI, 100));
+        freq.setLabelFormatter(v -> hz(v));
+        freq.addOnChangeListener((s, v, user) -> {
+            java.util.List<Float> vals = s.getValues();
+            Prefs.setInt(this, Prefs.VIZ_LO, Math.round(vals.get(0)));
+            Prefs.setInt(this, Prefs.VIZ_HI, Math.round(vals.get(1)));
+            preview.reload();
+        });
+        col.addView(freq);
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.addView(col);
+        final androidx.appcompat.app.AlertDialog box = new ThemedDialogBuilder(this)
+                .setTitle("Visualizer style")
+                .setView(scroll)
+                .setNeutralButton("Reset", null)
+                .setPositiveButton("Done", null)
+                .show();
+        // Reset keeps the dialog open so the preview shows the defaults at once
+        box.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            gain.setValue(35);
+            smooth.setValue(50);
+            freq.setValues(0f, 100f);
+        });
     }
 
     /** Swatches plus a hex field. Picking a color switches to Custom unless Ambient is on. */

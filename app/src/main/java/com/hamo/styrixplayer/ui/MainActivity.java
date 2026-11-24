@@ -1391,15 +1391,9 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
      * and get bottom padding so the last row can still scroll clear of it.
      */
     private void applyMiniOverlap(boolean miniShown) {
-        View area = findViewById(R.id.content_area);
-        if (area == null) return;
-        int over = miniShown ? dp(84) : 0; // mini card (70dp) plus its margins
-        ViewGroup.LayoutParams lp = area.getLayoutParams();
-        if (lp instanceof ViewGroup.MarginLayoutParams
-                && ((ViewGroup.MarginLayoutParams) lp).bottomMargin != -over) {
-            ((ViewGroup.MarginLayoutParams) lp).bottomMargin = -over;
-            area.setLayoutParams(lp);
-        }
+        // The mini player has a -76dp top margin (70dp card + 6dp gap), so it takes no row of its own
+        // and floats over the bottom of the lists; the lists just need room to scroll clear of it.
+        int over = miniShown ? dp(84) : 0;
         int[] ids = {R.id.list_songs, R.id.list_favs, R.id.list_playlists, R.id.yt_list};
         for (int id : ids) {
             View l = findViewById(id);
