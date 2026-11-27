@@ -46,7 +46,7 @@ public final class AudioDownloader {
 
     private AudioDownloader() {}
 
-    private static File coversDir(Context app) {
+    static File coversDir(Context app) {
         File dir = new File(app.getFilesDir(), "covers");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
@@ -114,7 +114,7 @@ public final class AudioDownloader {
         }
     }
 
-    private static void pipe(InputStream in, OutputStream out) throws IOException {
+    static void pipe(InputStream in, OutputStream out) throws IOException {
         byte[] buf = new byte[64 * 1024];
         int n;
         while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
@@ -240,7 +240,7 @@ public final class AudioDownloader {
     }
 
     /** MediaStore fills in DURATION a moment after the file stops being pending. */
-    private static void waitForDuration(ContentResolver cr, Uri uri) {
+    static void waitForDuration(ContentResolver cr, Uri uri) {
         for (int i = 0; i < 20; i++) {
             try (Cursor c = cr.query(uri, new String[]{MediaStore.Audio.Media.DURATION}, null, null, null)) {
                 if (c != null && c.moveToFirst() && c.getLong(0) > 0) return;
@@ -251,7 +251,7 @@ public final class AudioDownloader {
         }
     }
 
-    private static long scanLegacy(Context app, File f) throws IOException {
+    static long scanLegacy(Context app, File f) throws IOException {
         final AtomicReference<Uri> result = new AtomicReference<>();
         final CountDownLatch latch = new CountDownLatch(1);
         MediaScannerConnection.scanFile(app, new String[]{f.getAbsolutePath()}, null,
@@ -294,7 +294,7 @@ public final class AudioDownloader {
     }
 
     /** Video thumbnails are 16:9; keep only the centre square so covers aren't stretched anywhere. */
-    private static void squareCrop(File f) {
+    static void squareCrop(File f) {
         try {
             android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath());
             if (b == null || b.getWidth() == b.getHeight()) return;
@@ -309,7 +309,7 @@ public final class AudioDownloader {
         }
     }
 
-    private static String safeName(String s) {
+    static String safeName(String s) {
         String n = s.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
         if (n.length() > 80) n = n.substring(0, 80).trim();
         return n.isEmpty() ? "youtube_audio" : n;

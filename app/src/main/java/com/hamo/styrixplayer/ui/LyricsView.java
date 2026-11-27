@@ -150,8 +150,16 @@ public class LyricsView extends ViewGroup {
 
         /** True when a new whole word begins at character {@code at} (a space sits right before it or at it). */
         static boolean wordBreakBefore(String t, int at) {
-            return at > 0 && at < t.length()
-                    && (Character.isWhitespace(t.charAt(at - 1)) || Character.isWhitespace(t.charAt(at)));
+            if (at <= 0 || at >= t.length()) return false;
+            final char a = t.charAt(at - 1), b = t.charAt(at);
+            // Chinese / Japanese / Korean lines have no spaces: every character is its own "word"
+            return Character.isWhitespace(a) || Character.isWhitespace(b) || isCjk(a) || isCjk(b);
+        }
+
+        static boolean isCjk(char c) {
+            Character.UnicodeScript sc = Character.UnicodeScript.of(c);
+            return sc == Character.UnicodeScript.HAN || sc == Character.UnicodeScript.HIRAGANA
+                    || sc == Character.UnicodeScript.KATAKANA || sc == Character.UnicodeScript.HANGUL;
         }
 
         boolean wordSynced() {

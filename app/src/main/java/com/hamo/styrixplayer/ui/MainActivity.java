@@ -1328,10 +1328,12 @@ public class MainActivity extends BaseActivity implements PlayerFragment.Host {
         pm.getMenu().add(0, 1, 0, "Settings");
         pm.getMenu().add(0, 2, 1, "Rescan library");
         pm.getMenu().add(0, 3, 2, "Download from YouTube");
+        pm.getMenu().add(0, 4, 3, "Video to audio");
         pm.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) startActivity(new Intent(this, SettingsActivity.class));
             else if (item.getItemId() == 2) requestPermissionsThenLoad();
             else if (item.getItemId() == 3) startActivity(new Intent(this, DownloadActivity.class));
+            else if (item.getItemId() == 4) startActivity(new Intent(this, VideoAudioActivity.class));
             return true;
         });
         pm.show();

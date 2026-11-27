@@ -253,12 +253,21 @@ public class PlaybackService extends MediaSessionService {
         MediaItem cur = player == null ? null : player.getCurrentMediaItem();
         if (yt == null || cur == null) return;
         androidx.media3.common.MediaMetadata m = cur.mediaMetadata;
+        com.hamo.styrixplayer.yt.YtDownloads.Task running = com.hamo.styrixplayer.yt.YtDownloads.get(yt);
+        if (running != null) {
+            com.hamo.styrixplayer.yt.YtDownloads.cancel(yt);
+            android.widget.Toast.makeText(this, I18n.t("Cancelling download…"),
+                    android.widget.Toast.LENGTH_SHORT).show();
+            scheduleLayout();
+            return;
+        }
         com.hamo.styrixplayer.yt.YtDownloads.start(this, yt,
                 m.title == null ? "" : m.title.toString(),
                 m.artist == null ? "" : m.artist.toString(),
                 m.artworkUri == null ? "" : m.artworkUri.toString());
         android.widget.Toast.makeText(this, I18n.t("Download started"),
                 android.widget.Toast.LENGTH_SHORT).show();
+        scheduleLayout();
     }
 
     // download progress arrives on a worker thread; the session must be touched on the main one
@@ -277,16 +286,17 @@ public class PlaybackService extends MediaSessionService {
         if (mediaSession == null || player == null) return;
         String yt = currentYtId();
         long local = currentLocalId();
-        boolean liked = false, canDownload = false, hasHeart = false;
+        boolean liked = false, canDownload = false, hasHeart = false, downloading = false;
         if (yt != null) {
             hasHeart = true;
             liked = com.hamo.styrixplayer.yt.YtLikes.isLiked(this, yt);
             canDownload = com.hamo.styrixplayer.yt.YtLocal.songIdFor(this, yt) <= 0;
+            downloading = canDownload && com.hamo.styrixplayer.yt.YtDownloads.get(yt) != null;
         } else if (local >= 0) {
             hasHeart = true;
             liked = Db.get(this).isFavorite(local);
         }
-        String key = hasHeart + "/" + liked + "/" + canDownload;
+        String key = hasHeart + "/" + liked + "/" + canDownload + "/" + downloading;
         if (key.equals(layoutKey)) return;
         layoutKey = key;
         com.google.common.collect.ImmutableList.Builder<androidx.media3.session.CommandButton> b =
@@ -300,8 +310,8 @@ public class PlaybackService extends MediaSessionService {
         }
         if (canDownload) {
             b.add(new androidx.media3.session.CommandButton.Builder()
-                    .setDisplayName(I18n.t("Download"))
-                    .setIconResId(R.drawable.ic_download)
+                    .setDisplayName(I18n.t(downloading ? "Cancel download" : "Download"))
+                    .setIconResId(downloading ? R.drawable.ic_close : R.drawable.ic_download)
                     .setSessionCommand(DL_COMMAND)
                     .build());
         }

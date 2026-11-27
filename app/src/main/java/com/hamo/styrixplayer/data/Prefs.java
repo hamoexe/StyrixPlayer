@@ -30,6 +30,7 @@ public final class Prefs {
     public static final String VIZ_SMOOTH = "viz_smooth";        // 0..100, how calm the movement is
     public static final String VIZ_LO = "viz_lo";                // 0..100, lowest part of the spectrum shown
     public static final String VIZ_HI = "viz_hi";                // 0..100, highest part of the spectrum shown
+    public static final String LOCAL_LYRICS = "local_lyrics";      // use .lrc files next to the songs
     public static final String HEATMAP = "heatmap";                // most-played graph above the seek bar
     public static final String SONG_SORT = "song_sort";           // 0 title, 1 artist, 2 longest, 3 shortest
     public static final String MUSIC_CACHE_MB = "music_cache_mb"; // streamed-song cache size, 0 = off

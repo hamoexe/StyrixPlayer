@@ -10,8 +10,8 @@ android {
         applicationId "com.hamo.styrixplayer"
         minSdk 26
         targetSdk 34
-        versionCode 87
-        versionName "1.23.7"
+        versionCode 93
+        versionName "1.24.4"
     }
 
     buildTypes {
@@ -35,4 +35,5 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer:$media3"
     implementation "androidx.media3:media3-session:$media3"
     implementation "androidx.media3:media3-common:$media3"
+    implementation "androidx.media3:media3-transformer:$media3"
 }

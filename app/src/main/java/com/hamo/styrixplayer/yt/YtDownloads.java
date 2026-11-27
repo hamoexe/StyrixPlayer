@@ -55,6 +55,8 @@ public final class YtDownloads {
         public volatile int state = QUEUED;
         public volatile int percent = -1;        // -1: unknown
         public volatile String stage, message;
+        public final long created = System.currentTimeMillis();
+        volatile Context app;
         final AtomicBoolean cancel = new AtomicBoolean(false);
         long lastPost;
         int lastPct = -2;
@@ -114,7 +116,14 @@ public final class YtDownloads {
 
     public static void cancel(String key) {
         Task t = tasks.get(key);
-        if (t != null) t.cancel.set(true);
+        if (t == null || t.finished()) return;
+        t.cancel.set(true);
+        // saying so at once: a song still being looked up can't stop until that step is over
+        if (t.app != null) {
+            t.stage = "Cancelling…";
+            postProgress(t.app, t, true);
+            changed(t);
+        }
     }
 
     private static void toast(Context c, String msg) {
@@ -164,6 +173,13 @@ public final class YtDownloads {
         else text = I18n.t("Downloading…") + " " + t.percent + "%";
         NotificationCompat.Builder b = builder(app, t.title).setContentText(text).setOngoing(true)
                 .setProgress(indeterminate ? 0 : 100, Math.max(t.percent, 0), indeterminate);
+        if (!t.cancel.get()) {
+            Intent ci = new Intent(app, DownloadCancelReceiver.class)
+                    .putExtra(DownloadCancelReceiver.EXTRA_KEY, t.key);
+            PendingIntent cancel = PendingIntent.getBroadcast(app, t.key.hashCode(), ci,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.addAction(R.drawable.ic_close, I18n.t("Cancel"), cancel);
+        }
         post(app, t.key.hashCode(), b);
     }
 
@@ -190,6 +206,7 @@ public final class YtDownloads {
         final Context app = ctx.getApplicationContext();
         final String shown = title == null || title.isEmpty() ? "YouTube download" : title;
         final Task t = new Task(key, shown);
+        t.app = app;
         synchronized (tasks) {
             Task old = tasks.get(key);
             if (old != null && !old.finished()) {

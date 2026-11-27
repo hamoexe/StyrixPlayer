@@ -2,12 +2,6 @@ plugins {
     id 'com.android.application'
 }
 
-// Release signing: reads keystore.properties from the project root (kept out of git).
-// No file = the release APK is built unsigned, so the build still works.
-def ksFile = rootProject.file("keystore.properties")
-def ks = new Properties()
-if (ksFile.exists()) ksFile.withInputStream { ks.load(it) }
-
 android {
     namespace 'com.hamo.styrixplayer'
     compileSdk 34
@@ -16,24 +10,12 @@ android {
         applicationId "com.hamo.styrixplayer"
         minSdk 26
         targetSdk 34
-        versionCode 86
-        versionName "1.23.6"
-    }
-
-    signingConfigs {
-        release {
-            if (ksFile.exists()) {
-                storeFile file(ks['storeFile'])
-                storePassword ks['storePassword']
-                keyAlias ks['keyAlias']
-                keyPassword ks['keyPassword']
-            }
-        }
+        versionCode 90
+        versionName "1.24.1"
     }
 
     buildTypes {
         release {
-            if (ksFile.exists()) signingConfig signingConfigs.release
         }
     }
 
@@ -53,4 +35,5 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer:$media3"
     implementation "androidx.media3:media3-session:$media3"
     implementation "androidx.media3:media3-common:$media3"
+    implementation "androidx.media3:media3-transformer:$media3"
 }

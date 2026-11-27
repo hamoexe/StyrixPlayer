@@ -113,7 +113,7 @@ public final class LyricsRepo {
                               @Nullable String album, long durationMs, boolean force, String provider) {
         List<Cand> cands = new ArrayList<>();
         cands.add(new Cand(title, artist, album));
-        return load(c, songId, cands, false, false, durationMs, force, provider);
+        return load(c, songId, cands, false, false, durationMs, force, provider, null);
     }
 
     /**
@@ -129,11 +129,12 @@ public final class LyricsRepo {
     public static Lyrics load(Context c, long songId, Song song, long durationMs, boolean force, String provider) {
         boolean speed = false;
         for (String t : song.tags) if (SPEED_TAG.matcher(t).find()) speed = true;
-        return load(c, songId, candidates(song), !song.tags.isEmpty(), speed, durationMs, force, provider);
+        return load(c, songId, candidates(song), !song.tags.isEmpty(), speed, durationMs, force, provider, song);
     }
 
     private static Lyrics load(Context c, long songId, List<Cand> cands, boolean relaxed,
-                               boolean speed, long durationMs, boolean force, String provider) {
+                               boolean speed, long durationMs, boolean force, String provider,
+                               @Nullable Song song) {
         Db db = Db.get(c);
         Db.LyricsRow row = db.getLyrics(songId);
         if (row != null && row.custom) return fromRow(row);   // your own version always wins
@@ -147,8 +148,13 @@ public final class LyricsRepo {
         }
         try {
             Found f = null;
+            if (song != null && "auto".equals(provider)) {
+                LocalLyrics.Result lr = LocalLyrics.find(c, song);   // a file next to the song comes first
+                if (lr.text != null) f = localFound(lr.text);
+            }
             StringBuilder errors = new StringBuilder();
             for (Cand cand : cands) {
+                if (f != null) break;
                 try {
                     f = fetch(cand, durationMs, relaxed, speed, provider);
                 } catch (IOException e) {
@@ -158,6 +164,7 @@ public final class LyricsRepo {
                 if (f != null) break;
             }
             if (f == null && errors.length() > 0) throw new IOException(errors.toString());
+            f = markInstrumental(f);
             if (f == null) db.putLyrics(songId, null, null, false);
             else db.putLyrics(songId, f.synced, f.plain, f.instrumental);
             return fromRow(db.getLyrics(songId));
@@ -166,6 +173,209 @@ public final class LyricsRepo {
             if (row != null) return fromRow(row);
             return Lyrics.error(e.getMessage());
         }
+    }
+
+    // ---------- per-source availability (lyrics menu) ----------
+
+    public static final int P_SEARCHING = 0, P_WORD = 1, P_LINE = 2, P_TEXT = 3, P_NONE = 4, P_ERROR = 5, P_SLOW = 6, P_INSTR = 7;
+    public static final String[] SOURCE_KEYS = {"lyricsplus", "binilyrics", "kugou", "qqmusic", "netease", "lrclib"};
+    public static final String LOCAL_KEY = "local";
+    /** The file next to the song first, then the online sources. */
+    public static final String[] ALL_KEYS = {"local", "lyricsplus", "binilyrics", "kugou", "qqmusic", "netease", "lrclib"};
+    private static final Pattern WORD_STAMP_ANY = Pattern.compile("<\\d{1,3}:\\d{1,2}");
+    private static final java.util.Map<Long, List<Source>> PROBE_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** What one source has for the current song. */
+    public static final class Source {
+        public final String key;
+        public final int kind;
+        @Nullable public final String synced, plain;
+        /** Why it failed (error / too slow), for the row's detail line. */
+        @Nullable public String note;
+
+        Source(String key, int kind, @Nullable String synced, @Nullable String plain) {
+            this.key = key;
+            this.kind = kind;
+            this.synced = synced;
+            this.plain = plain;
+        }
+
+        public boolean usable() { return kind == P_WORD || kind == P_LINE || kind == P_TEXT || kind == P_INSTR; }
+    }
+
+    public interface ProbeListener {
+        /** Called from a worker thread, once per source, as each one finishes. */
+        void onSource(Source s);
+    }
+
+    public static void clearProbe(Context c, long songId) {
+        PROBE_CACHE.remove(songId);
+        //noinspection ResultOfMethodCallIgnored
+        probeFile(c, songId).delete();
+    }
+
+    private static final long PROBE_MAX_AGE_MS = 14L * 24 * 60 * 60 * 1000;
+
+    private static java.io.File probeFile(Context c, long songId) {
+        return new java.io.File(new java.io.File(c.getCacheDir(), "lyrics_probe"), songId + ".json");
+    }
+
+    @Nullable
+    private static List<Source> loadProbe(Context c, long songId) {
+        try {
+            java.io.File f = probeFile(c, songId);
+            if (!f.isFile() || System.currentTimeMillis() - f.lastModified() > PROBE_MAX_AGE_MS) return null;
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            JSONArray a = new JSONArray(out.toString("UTF-8"));
+            List<Source> list = new ArrayList<>();
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.getJSONObject(i);
+                list.add(new Source(o.getString("k"), o.getInt("t"),
+                        o.isNull("s") ? null : o.getString("s"), o.isNull("p") ? null : o.getString("p")));
+            }
+            return list.size() == SOURCE_KEYS.length ? list : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void saveProbe(Context c, long songId, List<Source> list) {
+        try {
+            JSONArray a = new JSONArray();
+            for (Source s : list) {
+                if (s.kind == P_ERROR || s.kind == P_SLOW) return;   // a failure must not be remembered
+                JSONObject o = new JSONObject();
+                o.put("k", s.key);
+                o.put("t", s.kind);
+                o.put("s", s.synced == null ? JSONObject.NULL : s.synced);
+                o.put("p", s.plain == null ? JSONObject.NULL : s.plain);
+                a.put(o);
+            }
+            java.io.File f = probeFile(c, songId);
+            //noinspection ResultOfMethodCallIgnored
+            f.getParentFile().mkdirs();
+            java.io.FileOutputStream out = new java.io.FileOutputStream(f);
+            out.write(a.toString().getBytes("UTF-8"));
+            out.close();
+        } catch (Exception ignored) {
+            // the list is just searched again next time
+        }
+    }
+
+    private static Source localSource(Context c, @Nullable Song song) {
+        LocalLyrics.Result r = LocalLyrics.find(c, song);
+        Source s;
+        if (r.text == null) {
+            s = new Source(LOCAL_KEY, r.denied ? P_ERROR : P_NONE, null, null);
+        } else {
+            Found f = markInstrumental(localFound(r.text));
+            int kind = f.instrumental ? P_INSTR
+                    : hasTimedLyrics(f.synced) ? (WORD_STAMP_ANY.matcher(f.synced).find() ? P_WORD : P_LINE) : P_TEXT;
+            s = new Source(LOCAL_KEY, kind, f.synced, f.plain);
+        }
+        s.note = r.note;
+        return s;
+    }
+
+    private static Found localFound(String text) {
+        return hasTimedLyrics(text) ? new Found(text, null, false) : new Found(null, text, false);
+    }
+
+    /** Asks every source in parallel what it has for this song. Results are remembered per song. */
+    public static void probe(Context c, long songId, @Nullable Song song, String title, String artist,
+                             @Nullable String album, long durationMs, ProbeListener l) {
+        l.onSource(localSource(c, song));
+        List<Source> cached = PROBE_CACHE.get(songId);
+        if (cached == null) {
+            cached = loadProbe(c, songId);
+            if (cached != null) PROBE_CACHE.put(songId, cached);
+        }
+        if (cached != null && cached.size() == SOURCE_KEYS.length) {
+            for (Source x : cached) l.onSource(x);
+            return;
+        }
+        final List<Cand> cands;
+        final boolean relaxed;
+        if (song != null) {
+            cands = candidates(song);
+            relaxed = !song.tags.isEmpty();
+        } else {
+            cands = new ArrayList<>();
+            cands.add(new Cand(title, artist, album));
+            relaxed = false;
+        }
+        final List<Source> done = java.util.Collections.synchronizedList(new ArrayList<>());
+        java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(SOURCE_KEYS.length);
+        for (final String key : SOURCE_KEYS) {
+            ex.execute(() -> {
+                Found f = null;
+                boolean failed = false, slow = false;
+                String why = null;
+                final long t0 = System.currentTimeMillis();
+                for (Cand cand : cands) {
+                    if (System.currentTimeMillis() - t0 > 10000) break;   // a slow source must not hold the list up
+                    try {
+                        f = fetch(cand, durationMs, relaxed, false, key);
+                    } catch (IOException | RuntimeException e) {
+                        failed = true;
+                        if (why == null) why = String.valueOf(e.getMessage());
+                        String m = String.valueOf(e.getMessage()).toLowerCase(Locale.US);
+                        if (m.contains("timed out") || m.contains("timeout")) slow = true;
+                    }
+                    if (f != null) break;
+                }
+                int kind;
+                f = markInstrumental(f);
+                if (f != null && f.instrumental) kind = P_INSTR;
+                else if (f == null) kind = failed ? (slow ? P_SLOW : P_ERROR) : P_NONE;
+                else if (hasTimedLyrics(f.synced)) kind = WORD_STAMP_ANY.matcher(f.synced).find() ? P_WORD : P_LINE;
+                else if (notEmpty(f.plain)) kind = P_TEXT;
+                else kind = P_NONE;
+                Source r = new Source(key, kind, f != null ? f.synced : null, f != null ? f.plain : null);
+                if (kind == P_ERROR || kind == P_SLOW) r.note = why;
+                done.add(r);
+                if (done.size() == SOURCE_KEYS.length) {
+                    List<Source> all = new ArrayList<>(done);
+                    PROBE_CACHE.put(songId, all);
+                    saveProbe(c, songId, all);
+                }
+                l.onSource(r);
+            });
+        }
+        ex.shutdown();
+    }
+
+    /** Stores what a source found as this song's lyrics, no new network request. */
+    public static void apply(Context c, long songId, Source s) {
+        Db.get(c).putLyrics(songId, s.synced, s.plain, s.kind == P_INSTR);
+    }
+
+    private static final Pattern TAG_LINE = Pattern.compile("\\[[A-Za-z]+:[^\\]]*\\]");
+
+    /**
+     * Some sources send a one-line "this is instrumental" note as if it were lyrics
+     * (QQ Music: "此歌曲为没有填词的纯音乐，请您欣赏"). Turn those into a real instrumental result.
+     */
+    @Nullable
+    private static Found markInstrumental(@Nullable Found f) {
+        if (f == null || f.instrumental) return f;
+        String src = notEmpty(f.synced) ? f.synced : f.plain;
+        if (!notEmpty(src)) return f;
+        String t = TAG_LINE.matcher(STAMP.matcher(src).replaceAll("")).replaceAll("")
+                .replaceAll("\\s+", " ").trim();
+        if (t.isEmpty() || t.length() > 40) return f;
+        String low = t.toLowerCase(Locale.ROOT);
+        if (low.contains("纯音乐") || low.contains("純音樂") || low.contains("没有填词") || low.contains("沒有填詞")
+                || low.contains("无歌词") || low.contains("無歌詞") || low.contains("instrumental")
+                || low.contains("no lyrics")) {
+            return new Found(null, null, true, f.durMs);
+        }
+        return f;
     }
 
     // ---------- candidates ----------
@@ -401,7 +611,7 @@ public final class LyricsRepo {
         String url = PLUS + "?title=" + enc(t) + "&artist=" + enc(artist.trim())
                 + (isUnknown(album) ? "" : "&album=" + enc(album.trim()))
                 + (durationMs > 0 ? "&duration=" + String.format(Locale.US, "%.3f", durationMs / 1000.0) : "");
-        String body = httpUrl(url, 20000);
+        String body = httpUrl(url, 25000);
         if (body == null) return null;
         String lrc = LyricsPlusParser.toEnhancedLrc(body);
         return lrc == null ? null : new Found(lrc, null, false);

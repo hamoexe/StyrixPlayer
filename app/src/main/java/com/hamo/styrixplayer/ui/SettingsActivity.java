@@ -121,6 +121,7 @@ public class SettingsActivity extends BaseActivity {
                 "Restore your queue and position when the app starts", Prefs.RESUME, true);
         addSwitch("Remember speed per song",
                 "Each song keeps the playback speed you set for it", Prefs.SPEED_PER_TRACK, false);
+        addLocalLyricsSwitch();
         addSwitch("Most played part",
                 "Shows a small graph above the seek bar of the parts of a song you replay most.",
                 Prefs.HEATMAP, true);
@@ -588,6 +589,24 @@ public class SettingsActivity extends BaseActivity {
         AppTheme.tintSwitch(sw);
         sw.setChecked(Prefs.getBool(this, key, def));
         sw.setOnCheckedChangeListener((b, checked) -> Prefs.setBool(this, key, checked));
+        row.setOnClickListener(v -> sw.toggle());
+    }
+
+    /** .lrc files next to the songs; reading them outside the media library needs all-files access. */
+    private void addLocalLyricsSwitch() {
+        View row = inflateRow("Lyrics files next to songs",
+                "Uses a .lrc file with the same name as the song, in the same folder (myMusic.m4a and myMusic.lrc). Needs all-files access.");
+        MaterialSwitch sw = row.findViewById(R.id.row_switch);
+        sw.setVisibility(View.VISIBLE);
+        sw.setSaveEnabled(false);
+        AppTheme.tintSwitch(sw);
+        sw.setChecked(Prefs.getBool(this, Prefs.LOCAL_LYRICS, false));
+        sw.setOnCheckedChangeListener((b, checked) -> {
+            Prefs.setBool(this, Prefs.LOCAL_LYRICS, checked);
+            if (checked && !com.hamo.styrixplayer.lyrics.LocalLyrics.canRead()) {
+                com.hamo.styrixplayer.lyrics.LocalLyrics.askAccess(this);
+            }
+        });
         row.setOnClickListener(v -> sw.toggle());
     }
 

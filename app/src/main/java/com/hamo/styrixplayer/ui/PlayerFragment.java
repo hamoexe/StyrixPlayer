@@ -145,6 +145,9 @@ public class PlayerFragment extends Fragment {
     private ViewGroup content;
     private ImageView art;
     private ImageView artShadow;
+    private ImageView miniArt;                       // small cover beside the title while lyrics are open
+    private float miniP;                             // 0 = hidden, 1 = fully shown
+    @Nullable private ValueAnimator miniAnim;
     private TextView title, artist, elapsed, total, speedBadge, speedLabel;
     private WavySlider seek;
     private Slider speedSlider;
@@ -339,6 +342,7 @@ public class PlayerFragment extends Fragment {
         quickPanel = findViewById(R.id.quick_panel);
         art = findViewById(R.id.art);
         artShadow = findViewById(R.id.art_shadow);
+        miniArt = findViewById(R.id.mini_art);
         artShadow.setImageBitmap(CoverShadow.bitmap());
         title = findViewById(R.id.title);
         artist = findViewById(R.id.artist);
@@ -428,7 +432,14 @@ public class PlayerFragment extends Fragment {
                     // already on the phone: this becomes "add to playlist" for the saved copy
                     SongActions.addToPlaylistDialog(requireActivity(), local, this::updatePlaylistIndicator);
                 } else {
-                    downloadYt(yt);
+                    YtDownloads.Task running = YtDownloads.get(yt);
+                    if (running == null) {
+                        downloadYt(yt);
+                    } else if (System.currentTimeMillis() - running.created > 800) {
+                        // pressing the button again while it downloads cancels it
+                        YtDownloads.cancel(yt);
+                        Toast.makeText(ctx(), "Cancelling download…", Toast.LENGTH_SHORT).show();
+                    }
                 }
                 return;
             }
@@ -681,6 +692,7 @@ public class PlayerFragment extends Fragment {
         artShadow.animate().cancel();
         lyricsView.animate().cancel();
         applyVideoLayout(animate && videoOn);   // sets the end state; the fade below starts from it
+        setMiniCover(open && !videoOn, animate);
         if (animate && !videoOn) {
             // Plain cross-fade. No layout transition: a TransitionManager pass over the whole page made
             // the title, seek bar and buttons fly up and drop back while the cover and lyrics swapped.
@@ -731,6 +743,39 @@ public class PlayerFragment extends Fragment {
         }
     }
 
+    /**
+     * While the lyrics are open the big cover is gone, so a small one sits to the left of the title
+     * and artist instead (the text slides over to make room). Grows from nothing and fades in.
+     */
+    private void setMiniCover(boolean show, boolean animate) {
+        if (miniArt == null) return;
+        final float to = show ? 1f : 0f;
+        if (miniAnim != null) miniAnim.cancel();
+        if (!animate || view == null) {
+            applyMini(to);
+            return;
+        }
+        miniAnim = ValueAnimator.ofFloat(miniP, to);
+        miniAnim.setDuration(show ? 320 : 220);
+        miniAnim.setInterpolator(new android.view.animation.PathInterpolator(0.3f, 0f, 0.2f, 1f));
+        miniAnim.addUpdateListener(a -> applyMini((float) a.getAnimatedValue()));
+        miniAnim.start();
+    }
+
+    private void applyMini(float p) {
+        if (miniArt == null) return;
+        miniP = p;
+        final float d = getResources().getDisplayMetrics().density;
+        android.widget.LinearLayout.LayoutParams lp =
+                (android.widget.LinearLayout.LayoutParams) miniArt.getLayoutParams();
+        lp.width = Math.round(56 * d * p);
+        lp.setMarginEnd(Math.round(14 * d * p));
+        miniArt.setLayoutParams(lp);
+        miniArt.setAlpha(p);
+        miniArt.setScaleX(0.8f + 0.2f * p);
+        miniArt.setScaleY(0.8f + 0.2f * p);
+    }
+
     /** Looks the song up (cache first, then LRCLIB) and hands the result to the view. */
     private void loadLyrics(MediaItem item, boolean force) {
         if (!lyricsOpen || lyricsView == null) return;
@@ -779,96 +824,57 @@ public class PlayerFragment extends Fragment {
 private void showLyricsMenu() {
     final long id = lyricsSongId();
     if (id < 0 || lyricsView == null || controller == null) return;
-    final boolean synced = lyricsView.isSynced();
-    final long offset = lyricsView.getOffsetMs();
     final Db.LyricsRow row = Db.get(ctx()).getLyrics(id);
     final boolean custom = row != null && row.custom;
+    final MediaItem cur = controller.getCurrentMediaItem();
+    final MediaMetadata md = cur != null ? cur.mediaMetadata : null;
+    final String t = md != null && md.title != null ? md.title.toString() : "";
+    final String a = md != null && md.artist != null ? md.artist.toString() : "";
+    final String al = md != null && md.albumTitle != null ? md.albumTitle.toString() : "";
+    final long d0 = controller.getDuration();
+    final long durationMs = d0 == C.TIME_UNSET ? 0 : d0;
+    final Context app = getApplicationContext();
 
-    final List<String> labels = new ArrayList<>();
-    final List<Integer> actions = new ArrayList<>();
-    labels.add("Edit / translate lyrics"); actions.add(0);
-    if (synced) {
-        labels.add("Lyrics earlier  (-0.5 s)"); actions.add(1);
-        labels.add("Lyrics later  (+0.5 s)"); actions.add(2);
-        labels.add("Reset sync"); actions.add(3);
-    }
-    labels.add(custom ? "Discard my version and search online" : "Search again"); actions.add(4);
-    
-    // Show the selected lyrics source in the lyrics menu.
-    String selectedProvider = prefs.getString("lyrics_provider", "auto");
-    String providerLabel = "lrclib".equals(selectedProvider) ? "LRCLIB" :
-            "lyricsplus".equals(selectedProvider) ? "LyricsPlus" :
-            "binilyrics".equals(selectedProvider) ? "BiniLyrics" :
-            "kugou".equals(selectedProvider) ? "Kugou" :
-            "qqmusic".equals(selectedProvider) ? "QQ Music" :
-            "netease".equals(selectedProvider) ? "NetEase" : "Automatic (recommended)";
-    labels.add("Lyrics source · " + providerLabel); actions.add(5);
+    LyricsSheet.show(requireActivity(), new LyricsSheet.Host() {
+        @Override public void onOffset(long ms) {
+            lyricsView.setOffsetMs(ms);
+            Db.get(ctx()).setLyricsOffset(id, ms);
+        }
+        @Override public void onEdit() {
+            if (controller != null && controller.isPlaying()) controller.pause();
+            lyricsEditorLauncher.launch(new Intent(ctx(), LyricsEditorActivity.class)
+                    .putExtra(LyricsEditorActivity.EXTRA_SONG_ID, id)
+                    .putExtra(LyricsEditorActivity.EXTRA_NAME, t.isEmpty() ? "lyrics" : t));
+        }
+        @Override public void onAuto() {
+            prefs.edit().putString("lyrics_provider", "auto").apply();
+            reloadFromNetwork(id);
+        }
+        @Override public void onApply(LyricsRepo.Source s, boolean forAll) {
+            if (forAll) prefs.edit().putString("lyrics_provider", s.key).apply();
+            LyricsRepo.apply(app, id, s);
+            MediaItem item = controller != null ? controller.getCurrentMediaItem() : null;
+            if (item != null) { lyricsForId = null; loadLyrics(item, false); }
+        }
+        @Override public void onSearchAgain() {
+            // the sheet stays open and runs a fresh probe, then picks the best source itself
+            LyricsRepo.clearProbe(app, id);
+            if (custom) Db.get(ctx()).deleteLyrics(id);
+        }
+        @Override public void probe(LyricsRepo.ProbeListener l) {
+            final Song sg = Library.get(id);
+            lyricsIo.execute(() -> LyricsRepo.probe(app, id, sg, t, a, al, durationMs, l));
+        }
+    }, lyricsView.isSynced(), custom, lyricsView.getOffsetMs(), prefs.getString("lyrics_provider", "auto"),
+            row != null ? row.synced : null, row != null ? row.plain : null,
+            row != null && row.instrumental);
+}
 
-    new ThemedDialogBuilder(requireActivity())
-            .setTitle(synced ? String.format(Locale.US, "Lyrics sync: %+.1f s", offset / 1000f)
-                    : custom ? "Lyrics (your version)" : "Lyrics")
-            .setItems(labels.toArray(new String[0]), (dialog, which) -> {
-                int action = actions.get(which);
-                if (action == 0) {
-                    MediaItem item = controller != null ? controller.getCurrentMediaItem() : null;
-                    String name = item != null && item.mediaMetadata.title != null
-                            ? item.mediaMetadata.title.toString() : "lyrics";
-                    if (controller != null && controller.isPlaying()) controller.pause();
-                    lyricsEditorLauncher.launch(new Intent(ctx(), LyricsEditorActivity.class)
-                            .putExtra(LyricsEditorActivity.EXTRA_SONG_ID, id)
-                            .putExtra(LyricsEditorActivity.EXTRA_NAME, name));
-                    return;
-                }
-                if (action == 4) {
-                    if (custom) Db.get(ctx()).deleteLyrics(id);
-                    MediaItem item = controller != null ? controller.getCurrentMediaItem() : null;
-                    if (item != null) loadLyrics(item, true);
-                    return;
-                }
-                if (action == 5) {
-                    String[] sources = {
-                        "Automatic (LyricsPlus → BiniLyrics → Kugou → QQ Music → NetEase → LRCLIB)",
-                        "LRCLIB only",
-                        "LyricsPlus only",
-                        "BiniLyrics only",
-                        "Kugou only",
-                        "QQ Music only",
-                        "NetEase only"
-                    };
-
-                    String current = prefs.getString("lyrics_provider", "auto");
-
-                    int checked = "lrclib".equals(current) ? 1 :
-                                  "lyricsplus".equals(current) ? 2 :
-                                  "binilyrics".equals(current) ? 3 :
-                                  "kugou".equals(current) ? 4 :
-                                  "qqmusic".equals(current) ? 5 :
-                                  "netease".equals(current) ? 6 : 0;
-
-                    new ThemedDialogBuilder(requireActivity())
-                            .setTitle("Choose lyrics source")
-                            .setSingleChoiceItems(sources, checked, (d, selectedIndex) -> {
-                                String value = selectedIndex == 1 ? "lrclib" :
-                                               selectedIndex == 2 ? "lyricsplus" :
-                                               selectedIndex == 3 ? "binilyrics" :
-                                               selectedIndex == 4 ? "kugou" :
-                                               selectedIndex == 5 ? "qqmusic" :
-                                               selectedIndex == 6 ? "netease" : "auto";
-
-                                prefs.edit().putString("lyrics_provider", value).apply();
-                                Db.LyricsRow cached = Db.get(ctx()).getLyrics(id);
-                                if (cached != null && !cached.custom) Db.get(ctx()).deleteLyrics(id);
-                                MediaItem item = controller != null ? controller.getCurrentMediaItem() : null;
-                                if (item != null) loadLyrics(item, true);
-                                d.dismiss();
-                            }).show();
-                    return;
-                }
-                long next = action == 1 ? offset - 500 : action == 2 ? offset + 500 : 0;
-                lyricsView.setOffsetMs(next);
-                Db.get(ctx()).setLyricsOffset(id, next);
-            })
-            .show();
+private void reloadFromNetwork(long id) {
+    Db.LyricsRow cached = Db.get(ctx()).getLyrics(id);
+    if (cached != null && !cached.custom) Db.get(ctx()).deleteLyrics(id);
+    MediaItem item = controller != null ? controller.getCurrentMediaItem() : null;
+    if (item != null) loadLyrics(item, true);
 }
 
     // ---------- quick settings panel ----------
@@ -1311,6 +1317,7 @@ private void showLyricsMenu() {
         boolean want = videoPref && vid != null;
         if (want != videoOn) {
             videoOn = want;
+            setMiniCover(lyricsOpen && !videoOn, animate);
             videoBox.animate().cancel();
             art.animate().cancel();
             artShadow.animate().cancel();
@@ -1724,7 +1731,7 @@ private void showLyricsMenu() {
                         inAny ? activeColor() : normalColor(), false, -1);
             } else if (task != null) {
                 int pct = task.stage != null || task.state == YtDownloads.QUEUED ? -1 : task.percent;
-                setPlaylistIcon(R.drawable.ic_download, activeColor(), true, pct);
+                setPlaylistIcon(R.drawable.ic_close, activeColor(), true, pct);
             } else {
                 setPlaylistIcon(R.drawable.ic_download, normalColor(), false, -1);
             }
@@ -2228,6 +2235,10 @@ private void showLyricsMenu() {
                 setBlur(blur);
                 if (bmp != null) art.setImageBitmap(bmp);
                 else art.setImageResource(R.drawable.ic_art_placeholder);
+                if (miniArt != null) {
+                    if (bmp != null) miniArt.setImageBitmap(bmp);
+                    else miniArt.setImageResource(R.drawable.ic_art_placeholder);
+                }
                 if (videoOn ? (lyricsOpen && !lyricsEmpty) : lyricsOpen) {
                     // Cover is meant to be hidden (lyrics or video on). A cancelled fade-out never runs its
                     // end action, so a late cover load used to fade the cover back in behind the lyrics.

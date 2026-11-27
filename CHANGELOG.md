@@ -3,6 +3,34 @@
 Newest first. One entry per release you tag on GitHub (not one per build).
 Copy the entry into the release notes: the in-app updater shows that text.
 
+## 1.24.4
+- New: press the download button again while a song is downloading to cancel it. The button shows a cross inside the progress ring, the media notification's download button turns into "Cancel download", and the download's own notification has a Cancel button. A cancelled download leaves no half file behind.
+- Fixed: a one-line "this is instrumental" note sent as lyrics (QQ Music's "此歌曲为没有填词的纯音乐，请您欣赏" and similar) is now treated as an instrumental song instead of being shown as lyrics. The Source tab shows these as "Instrumental".
+
+- New: lyrics files next to songs. Turn on Settings > Playback > "Lyrics files next to songs" (it asks for all-files access), then a file with the same name as the song in the same folder is used first: myMusic.m4a and myMusic.lrc (or .txt for plain text). It also shows up as "Local file" in the lyrics Source tab.
+- Changed: the lyrics Source tab remembers what it found for each song (for 14 days), so reopening it is instant. Press Search again to check the sources again. Failed lookups are never remembered.
+
+## 1.24.3
+- Changed: in the lyrics Source tab, "Search again" no longer closes the sheet. It checks every source again, then switches to the best result by itself: word by word if any source has it, otherwise line by line, otherwise text only. Tapping a source also keeps the sheet open now.
+- Fixed: the "every song" switch used the wrong colours; it follows the cover's accent now.
+- Changed: a slow source no longer holds the list up: a source stops trying more title variants after 10 s, and after a fresh search the best word-by-word result is picked after 6 s without waiting for the slowest source. A source that times out shows "Too slow" instead of "Couldn't reach". LyricsPlus keeps its long wait (25 s) because its server is slow but usually answers.
+
+## 1.24.2
+- Changed: the lyrics Source tab now checks every source live for the current song. Each one shows Word by word, Line by line, Text only, or greys out when it has nothing or can't be reached. Tap one that has lyrics to switch to it instantly, with no new search. The one showing now is marked. A switch makes the chosen source the default for every song. Automatic is at the top.
+- Changed: new look for the lyrics sheet (soft gradient, segmented tabs, glowing offset card).
+
+## 1.24.1
+- Changed: the lyrics menu is now a bottom sheet with three tabs. Sync shows the current offset big with -0.5 / -0.1 / +0.1 / +0.5 buttons and Reset. Source lists every lyrics source with short names and a mark on the one in use (tap one to switch). Edit opens the lyrics editor. "Search again" is under Source.
+- Added Arabic / Kurdish / Turkish translations for the new menu.
+
+## 1.24.0
+- New: Video to audio. Menu (three dots) > Video to audio, or share any video to StyrixPlayer. You name the song (the title starts from the video's name), pick a cover (a frame from the video, or any image) and can use only part of the video. The sound is copied as it is when it is already AAC, otherwise converted to AAC. The song is saved as .m4a in Music/StyrixPlayer with the title, artist and cover inside the file, and appears in your library.
+- Changed: while the lyrics are open, the cover now shrinks into a small picture to the left of the title and artist instead of disappearing.
+
+## 1.23.8
+- Fixed: Chinese, Japanese and Korean lyrics (word-synced from Kugou) were treated as one giant word, so the word swell and the timing smoothing covered the whole line. Every character now counts as its own word.
+- Added Arabic / Kurdish / Turkish translations for the new lyrics source names.
+
 ## 1.23.7
 - New: lyrics providers for NetEase, Kugou and QQ Music, with individual source selection and automatic fallback.
 - Improved: lyric search matching checks song title and artist instead of blindly accepting the first result, reducing unrelated matches and remixes.
